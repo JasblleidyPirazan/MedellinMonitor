@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitor de Contratación Medellín — Venseremos</title>
+  <meta name="description" content="Veeduría ciudadana sobre la contratación pública del gobierno de Medellín 2024–2027. Datos en tiempo real desde SECOP II.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+  <!-- Loading overlay -->
+  <div id="loading" class="loading-overlay">
+    <div class="loading-inner">
+      <div class="spinner"></div>
+      <p id="loading-text">Conectando con datos.gov.co…</p>
+      <p id="loading-sub" class="loading-sub"></p>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-icon">⬡</div>
+        <div class="brand-text">
+          <h1>MONITOR DE CONTRATACIÓN</h1>
+          <span class="brand-sub">Medellín · Gobierno Fico 2024–2027 · Veeduría ciudadana por <strong>Venseremos</strong></span>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="update-badge" id="last-updated">// cargando…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+
+    <!-- KPIs -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <span class="kpi-label">// CONTRATOS</span>
+        <span class="kpi-value" id="kpi-total" style="color: var(--white)">—</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">// VALOR TOTAL</span>
+        <span class="kpi-value" id="kpi-valor" style="color: var(--green)">—</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">// ACTIVOS</span>
+        <span class="kpi-value" id="kpi-activos" style="color: var(--yellow)">—</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">// PyME</span>
+        <span class="kpi-value" id="kpi-pyme" style="color: var(--orange)">—</span>
+      </div>
+    </section>
+
+    <!-- Charts -->
+    <section class="charts-row">
+      <div class="terminal-panel">
+        <div class="panel-title">▶ DISTRIBUCIÓN POR TIPO DE CONTRATO</div>
+        <div id="chart-tipo-bars"></div>
+      </div>
+      <div class="terminal-panel">
+        <div class="panel-title">▶ DISTRIBUCIÓN POR MODALIDAD DE CONTRATACIÓN</div>
+        <div id="chart-modalidad-bars"></div>
+      </div>
+    </section>
+
+    <!-- Filters -->
+    <section class="terminal-panel">
+      <div class="panel-title">▶ FILTROS</div>
+      <div class="filters-grid">
+        <div class="filter-group">
+          <label class="filter-label">ENTIDAD</label>
+          <select id="filter-entidad" class="filter-select"><option value="">Todas</option></select>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label">TIPO DE CONTRATO</label>
+          <select id="filter-tipo" class="filter-select"><option value="">Todos</option></select>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label">MODALIDAD</label>
+          <select id="filter-modalidad" class="filter-select"><option value="">Todas</option></select>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label">ESTADO</label>
+          <select id="filter-estado" class="filter-select"><option value="">Todos</option></select>
+        </div>
+        <div class="filter-group filter-group--wide">
+          <label class="filter-label">BUSCAR CONTRATISTA / NIT / OBJETO</label>
+          <input type="text" id="search-input" class="filter-input" placeholder="Nombre, NIT o palabras del objeto del contrato…">
+        </div>
+      </div>
+      <div class="filters-footer">
+        <span class="results-count" id="results-count">— contratos</span>
+        <button class="btn-reset" id="btn-reset">✕ Limpiar filtros</button>
+      </div>
+    </section>
+
+    <!-- Table -->
+    <section class="terminal-panel">
+      <div class="panel-title">▶ CONTRATOS</div>
+      <div class="table-wrapper">
+        <table class="contracts-table" id="contracts-table">
+          <thead>
+            <tr>
+              <th>ENTIDAD</th>
+              <th>OBJETO DEL CONTRATO</th>
+              <th>CONTRATISTA</th>
+              <th>MODALIDAD</th>
+              <th>VALOR</th>
+              <th>FECHA FIRMA</th>
+              <th>ESTADO</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <span class="footer-label">Fuente:</span>
+        <a href="https://www.datos.gov.co/resource/jbjy-vk9h" target="_blank" rel="noopener">SECOP II Contratos Electrónicos — datos.gov.co</a>
+        · API SODA · Colombia Compra Eficiente · MinTIC
+      </div>
+      <div>
+        <span class="footer-label">Producido por:</span>
+        <a href="https://venseremos.co" target="_blank" rel="noopener">venseremos.co</a>
+        · Los datos son públicos. El control es ciudadano.
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+name: Actualizar datos SECOP
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'   # Cada lunes a las 8am UTC (3am Medellín)
+  workflow_dispatch:        # Ejecución manual desde GitHub Actions
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: pip install requests
+
+      - name: Descargar contratos desde SECOP II
+        run: python fetch_data.py
+
+      - name: Confirmar y subir cambios
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'data: actualizar contratos SECOP Medellín [skip ci]'
+          file_pattern: 'data/contratos.json'
+          commit_author: 'github-actions[bot] <github-actions[bot]@users.noreply.github.com>'
