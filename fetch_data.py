@@ -23,6 +23,7 @@ import os
 import re
 import time
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -153,6 +154,22 @@ RE_MINIMA          = re.compile(r'm[ií]nima cuant', re.I)
 def proveedor_valido(nombre: str) -> bool:
     return bool(nombre) and not PROVEEDOR_INVALIDO.match(nombre.strip())
 
+def _sin_tildes(s: str) -> str:
+    return ''.join(ch for ch in unicodedata.normalize('NFD', s)
+                   if unicodedata.category(ch) != 'Mn')
+
+def es_alcaldia(entidad: str) -> bool:
+    """La entidad núcleo del gobierno local aparece con varios nombres:
+    «Alcaldía de Medellín», «Municipio de Medellín» y, tras la Ley 2286 de
+    2023, «Distrito Especial de Ciencia, Tecnología e Innovación de Medellín».
+    El nombre debe EMPEZAR por una de esas formas: un 'contains' arrastraría
+    entes adscritos (p. ej. «Fondo de Valorización del Municipio de Medellín»).
+    Misma semántica que esAlcaldia() en assets/app.js."""
+    e = _sin_tildes(entidad.upper()).strip()
+    return (e.startswith('ALCALDIA DE MEDELLIN')
+            or e.startswith('MUNICIPIO DE MEDELLIN')
+            or (e.startswith('DISTRITO') and 'MEDELLIN' in e))
+
 def build_resumen(contracts: list) -> dict:
     valor_total = sum(c['valor'] for c in contracts)
     activos = sum(1 for c in contracts
@@ -263,6 +280,12 @@ def main():
     # 1) Resumen global: estadísticas sobre el dataset COMPLETO (archivo pequeño)
     print(f'Agregando estadísticas globales de {len(contracts):,} contratos…')
     resumen = build_resumen(contracts)
+
+    # 1b) Resumen del subconjunto Alcaldía/Distrito, para el filtro de ámbito
+    alcaldia = [c for c in contracts if es_alcaldia(c['entidad'])]
+    print(f'  de ellos, {len(alcaldia):,} son de la Alcaldía/Distrito de Medellín')
+    resumen['alcaldia'] = build_resumen(alcaldia) if alcaldia else None
+
     resumen.update({'updated': updated, 'ciudad': 'Medellín', 'ciudades': ciudades})
     RESUMEN_FILE.write_text(
         json.dumps(resumen, ensure_ascii=False, separators=(',', ':')),

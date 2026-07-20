@@ -40,6 +40,8 @@ jobs:
       - name: Confirmar y subir cambios
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: 'data: actualizar contratos SECOP Medellín [skip ci]'
+          # Sin [skip ci]: Netlify y otros CI deben desplegar el commit de datos.
+          # No hay riesgo de bucle: los push del GITHUB_TOKEN no disparan workflows.
+          commit_message: 'data: actualizar contratos SECOP Medellín'
           file_pattern: 'data/*.json'
           commit_author: 'github-actions[bot] <github-actions[bot]@users.noreply.github.com>'

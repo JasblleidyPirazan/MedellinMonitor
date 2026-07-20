@@ -40,6 +40,20 @@
 
   <main class="main-content">
 
+    <!-- Ámbito del tablero -->
+    <section class="scope-bar" aria-label="Ámbito del tablero">
+      <span class="scope-label">ÁMBITO:</span>
+      <label class="scope-option">
+        <input type="radio" name="ambito" value="todos" checked>
+        <span>Toda la contratación en Medellín</span>
+      </label>
+      <label class="scope-option">
+        <input type="radio" name="ambito" value="alcaldia">
+        <span>Solo Alcaldía de Medellín (aparece también como «Municipio» o «Distrito Especial»)</span>
+      </label>
+      <span class="scope-note" id="scope-note"></span>
+    </section>
+
     <!-- KPIs -->
     <section class="kpi-grid" aria-label="Indicadores generales">
       <div class="kpi-card">

@@ -129,6 +129,52 @@ function renderHero(r) {
     </div>`;
 }
 
+// ─── RENDER (todo el tablero para un resumen dado) ───────────────────────────
+function renderAll(r) {
+  renderHero(r);
+
+  renderMonthlyBars('chart-mes-contratos', r.serieMensual ?? [], {
+    valueIdx: 1, gold: false, format: v => Math.round(v).toLocaleString('es-CO'),
+  });
+  renderMonthlyBars('chart-mes-valor', r.serieMensual ?? [], {
+    valueIdx: 2, gold: true, format: formatCOP,
+  });
+
+  renderBarList('chart-modalidad',
+    [...r.porModalidad]
+      .sort((a, b) => (b[2] ?? 0) - (a[2] ?? 0))   // este gráfico muestra VALOR
+      .slice(0, 8).map(([label, count, valor]) => ({
+      label, value: valor ?? 0,
+      display: formatCOP(valor ?? 0),
+      title: `${label}: ${count.toLocaleString('es-CO')} contratos`,
+    })),
+    { gold: true, pctBase: r.valorTotal });
+
+  renderBarList('chart-tipo',
+    r.porTipo.slice(0, 8).map(([label, count]) => ({
+      label, value: count,
+      display: `${count.toLocaleString('es-CO')} contratos`,
+    })));
+
+  renderBarList('chart-entidades',
+    (r.topEntidades ?? []).map(([label, count, valor]) => ({
+      label, value: valor,
+      display: formatCOP(valor),
+      title: `${label}: ${count.toLocaleString('es-CO')} contratos`,
+    })),
+    { gold: true, pctBase: r.valorTotal });
+
+  renderBarList('chart-contratistas',
+    r.topValor.map(t => ({
+      label: t.name,
+      sub: t.nit ? `NIT ${t.nit}` : '',
+      value: t.valor,
+      display: formatCOP(t.valor),
+      title: `${t.name}: ${t.count.toLocaleString('es-CO')} contratos`,
+    })),
+    { gold: true, pctBase: r.valorTotal });
+}
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 async function init() {
   let resumen = null;
@@ -152,49 +198,25 @@ async function init() {
   const d = new Date(resumen.updated).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' });
   document.getElementById('last-updated').textContent = `// datos actualizados: ${d}`;
 
-  renderHero(resumen);
-
-  renderMonthlyBars('chart-mes-contratos', resumen.serieMensual, {
-    valueIdx: 1, gold: false, format: v => Math.round(v).toLocaleString('es-CO'),
+  // Selector de ámbito: toda la contratación ↔ solo Alcaldía/Distrito
+  const note = document.getElementById('scope-note');
+  document.querySelectorAll('input[name="ambito"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const alcaldia = radio.value === 'alcaldia';
+      if (alcaldia && !resumen.alcaldia) {
+        note.textContent = 'aún no hay resumen de la Alcaldía — regenera los datos';
+        renderAll(resumen);
+        return;
+      }
+      const r = alcaldia ? resumen.alcaldia : resumen;
+      note.textContent = alcaldia
+        ? `${r.total.toLocaleString('es-CO')} contratos · ${formatCOP(r.valorTotal)}`
+        : '';
+      renderAll(r);
+    });
   });
-  renderMonthlyBars('chart-mes-valor', resumen.serieMensual, {
-    valueIdx: 2, gold: true, format: formatCOP,
-  });
 
-  renderBarList('chart-modalidad',
-    [...resumen.porModalidad]
-      .sort((a, b) => (b[2] ?? 0) - (a[2] ?? 0))   // este gráfico muestra VALOR
-      .slice(0, 8).map(([label, count, valor]) => ({
-      label, value: valor ?? 0,
-      display: formatCOP(valor ?? 0),
-      title: `${label}: ${count.toLocaleString('es-CO')} contratos`,
-    })),
-    { gold: true, pctBase: resumen.valorTotal });
-
-  renderBarList('chart-tipo',
-    resumen.porTipo.slice(0, 8).map(([label, count]) => ({
-      label, value: count,
-      display: `${count.toLocaleString('es-CO')} contratos`,
-    })));
-
-  renderBarList('chart-entidades',
-    (resumen.topEntidades ?? []).map(([label, count, valor]) => ({
-      label, value: valor,
-      display: formatCOP(valor),
-      title: `${label}: ${count.toLocaleString('es-CO')} contratos`,
-    })),
-    { gold: true, pctBase: resumen.valorTotal });
-
-  renderBarList('chart-contratistas',
-    resumen.topValor.map(t => ({
-      label: t.name,
-      sub: t.nit ? `NIT ${t.nit}` : '',
-      value: t.valor,
-      display: formatCOP(t.valor),
-      title: `${t.name}: ${t.count.toLocaleString('es-CO')} contratos`,
-    })),
-    { gold: true, pctBase: resumen.valorTotal });
-
+  renderAll(resumen);
   document.getElementById('loading').classList.add('hidden');
 }
 

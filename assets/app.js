@@ -24,6 +24,9 @@ let sortDir           = -1;    // -1 desc, 1 asc
 // KPIs, tops y alertas reflejan el total real cuando no hay filtros activos.
 let globalResumen     = null;
 let totalGlobal       = 0;
+// Ámbito del tablero: 'todos' (toda la contratación en Medellín) o
+// 'alcaldia' (solo la Alcaldía/Distrito de Medellín como entidad contratante)
+let ambito            = 'todos';
 
 // ─── NORMALIZE ────────────────────────────────────────────────────────────────
 // Field names verificados contra SECOP II (jbjy-vk9h)
@@ -101,6 +104,23 @@ function esc(str) {
 
 function proveedorValido(nombre) {
   return nombre && !PROVEEDOR_INVALIDO.test(nombre.trim());
+}
+
+function sinTildes(s) {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// La entidad núcleo del gobierno local aparece con varios nombres:
+// «Alcaldía de Medellín», «Municipio de Medellín» y, tras la Ley 2286 de
+// 2023, «Distrito Especial de Ciencia, Tecnología e Innovación de Medellín».
+// El nombre debe EMPEZAR por una de esas formas: un 'contains' arrastraría
+// entes adscritos (p. ej. «Fondo de Valorización del Municipio de Medellín»).
+// Misma semántica que es_alcaldia() en fetch_data.py.
+function esAlcaldia(entidad) {
+  const e = sinTildes(String(entidad).toUpperCase()).trim();
+  return e.startsWith('ALCALDIA DE MEDELLIN') ||
+         e.startsWith('MUNICIPIO DE MEDELLIN') ||
+         (e.startsWith('DISTRITO') && e.includes('MEDELLIN'));
 }
 
 function esDirecta(modalidad) {
@@ -539,23 +559,30 @@ function filtersActive() {
     document.getElementById('search-input').value.trim() !== '';
 }
 
+function resumenActivo() {
+  if (!globalResumen) return null;
+  if (ambito === 'alcaldia') return globalResumen.alcaldia ?? null;
+  return globalResumen;
+}
+
 function renderDerived(contracts) {
-  // Sin filtros y con resumen global disponible → los paneles reflejan el
-  // dataset COMPLETO, no solo el subconjunto cargado para la tabla.
-  if (globalResumen && !filtersActive()) {
+  // Sin filtros y con resumen pre-agregado disponible para el ámbito → los
+  // paneles reflejan el dataset COMPLETO, no solo el subconjunto de la tabla.
+  const r = resumenActivo();
+  if (r && !filtersActive()) {
     renderKPIs({
-      total:      globalResumen.total,
-      valorTotal: globalResumen.valorTotal,
-      activos:    globalResumen.activos,
-      pymes:      globalResumen.pymes,
+      total:      r.total,
+      valorTotal: r.valorTotal,
+      activos:    r.activos,
+      pymes:      r.pymes,
     });
-    renderBars('chart-tipo-bars',      globalResumen.porTipo,      '');
-    renderBars('chart-modalidad-bars', globalResumen.porModalidad, 'bar-fill--yellow');
-    renderTopList('top-numero', globalResumen.topNumero, t => `${t.count} contratos`);
-    renderTopList('top-valor',  globalResumen.topValor,  t => formatCOP(t.valor));
+    renderBars('chart-tipo-bars',      r.porTipo,      '');
+    renderBars('chart-modalidad-bars', r.porModalidad, 'bar-fill--yellow');
+    renderTopList('top-numero', r.topNumero, t => `${t.count} contratos`);
+    renderTopList('top-valor',  r.topValor,  t => formatCOP(t.valor));
     renderAlertas(
-      { valorTotal: globalResumen.valorTotal, ...globalResumen.alertas },
-      globalResumen.total,
+      { valorTotal: r.valorTotal, ...r.alertas },
+      r.total,
     );
     return;
   }
@@ -579,6 +606,7 @@ function applyFilters() {
   const search    = document.getElementById('search-input').value.trim().toLowerCase();
 
   filteredContracts = allContracts.filter(c => {
+    if (ambito === 'alcaldia' && !esAlcaldia(c.entidad)) return false;
     if (entidad   && c.entidad   !== entidad)   return false;
     if (tipo      && c.tipo      !== tipo)       return false;
     if (modalidad && c.modalidad !== modalidad)  return false;
@@ -601,12 +629,15 @@ function applyFilters() {
 function updateResultsCount() {
   const el = document.getElementById('results-count');
   const n  = filteredContracts.length.toLocaleString('es-CO');
-  if (totalGlobal > allContracts.length) {
+  const r  = resumenActivo();
+  const totalAmbito = ambito === 'alcaldia' ? (r?.total ?? null) : totalGlobal;
+  const sufijo = ambito === 'alcaldia' ? ' de la Alcaldía/Distrito' : '';
+  if (totalAmbito && totalAmbito > filteredContracts.length) {
     el.textContent = filtersActive()
-      ? `${n} contratos (buscando entre los ${allContracts.length.toLocaleString('es-CO')} más recientes de ${totalGlobal.toLocaleString('es-CO')})`
-      : `${n} contratos más recientes de ${totalGlobal.toLocaleString('es-CO')} en total`;
+      ? `${n} contratos (buscando entre los ${allContracts.length.toLocaleString('es-CO')} más recientes cargados)`
+      : `${n} contratos cargados de ${totalAmbito.toLocaleString('es-CO')}${sufijo} en total`;
   } else {
-    el.textContent = `${n} contratos`;
+    el.textContent = `${n} contratos${sufijo}`;
   }
 }
 
@@ -630,9 +661,31 @@ function setupFilters() {
       document.getElementById(id).value = '';
     });
     document.getElementById('search-input').value = '';
+    ambito = 'todos';
+    document.querySelector('input[name="ambito"][value="todos"]').checked = true;
+    updateScopeNote();
     applyFilters();
   });
   document.getElementById('btn-export').addEventListener('click', exportCSV);
+
+  // Selector de ámbito (todo el tablero cambia de universo)
+  document.querySelectorAll('input[name="ambito"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      ambito = radio.value;
+      updateScopeNote();
+      applyFilters();
+    });
+  });
+  updateScopeNote();
+}
+
+function updateScopeNote() {
+  const note = document.getElementById('scope-note');
+  if (ambito !== 'alcaldia') { note.textContent = ''; return; }
+  const r = resumenActivo();
+  note.textContent = r
+    ? `${r.total.toLocaleString('es-CO')} contratos · ${formatCOP(r.valorTotal)}`
+    : 'cifras sobre los contratos cargados';
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
