@@ -84,11 +84,11 @@ function formatDate(iso) {
 function estadoColor(estado) {
   const s = estado.toLowerCase();
   if (s.includes('activo') || s.includes('ejecuci')) return 'var(--green)';
-  if (s.includes('cerrado'))                          return 'var(--yellow)';
+  if (s.includes('cerrado'))                          return 'var(--gold)';
   if (s.includes('terminado'))                        return 'var(--orange)';
   if (s.includes('liquidado'))                        return 'var(--text-muted)';
   if (s.includes('suspendido'))                       return 'var(--red)';
-  return 'var(--white)';
+  return 'var(--text-dim)';
 }
 
 function esc(str) {
@@ -191,11 +191,17 @@ function computeStats(contracts) {
   }).length;
   const pymes = contracts.filter(c => c.esPyme).length;
 
+  // entradas [etiqueta, nº contratos, valor] — misma forma que resumen.json
   const tipoMap      = new Map();
   const modalidadMap = new Map();
+  const acc = (map, key, valor) => {
+    const e = map.get(key) ?? [key, 0, 0];
+    e[1] += 1; e[2] += valor;
+    map.set(key, e);
+  };
   for (const c of contracts) {
-    tipoMap.set(c.tipo, (tipoMap.get(c.tipo) ?? 0) + 1);
-    modalidadMap.set(c.modalidad, (modalidadMap.get(c.modalidad) ?? 0) + 1);
+    acc(tipoMap, c.tipo, c.valor);
+    acc(modalidadMap, c.modalidad, c.valor);
   }
 
   return {
@@ -203,24 +209,36 @@ function computeStats(contracts) {
     valorTotal,
     activos,
     pymes,
-    porTipo:      [...tipoMap.entries()].sort((a, b) => b[1] - a[1]),
-    porModalidad: [...modalidadMap.entries()].sort((a, b) => b[1] - a[1]),
+    porTipo:      [...tipoMap.values()].sort((a, b) => b[1] - a[1]),
+    porModalidad: [...modalidadMap.values()].sort((a, b) => b[1] - a[1]),
   };
 }
 
 function computeTopContratistas(contracts) {
-  const map = new Map(); // proveedor → { count, valor }
+  // Agregación por NIT (documento_proveedor): el mismo contratista aparece
+  // con varias grafías del nombre; el NIT las unifica. Sin NIT válido, el
+  // nombre hace de clave.
+  const map = new Map(); // clave → { nit, name, count, valor, frac }
   for (const c of contracts) {
-    if (!proveedorValido(c.proveedor)) continue;
-    const e = map.get(c.proveedor) ?? { count: 0, valor: 0 };
+    const nit = (c.docProveedor ?? '').trim();
+    let key = nit && !PROVEEDOR_INVALIDO.test(nit) ? nit : null;
+    let nitOut = key ? nit : '';
+    if (key === null) {
+      if (!proveedorValido(c.proveedor)) continue;
+      key = `nombre:${c.proveedor}`;
+    }
+    const e = map.get(key) ?? { nit: nitOut, name: c.proveedor, count: 0, valor: 0, frac: 0 };
     e.count += 1;
     e.valor += c.valor;
-    map.set(c.proveedor, e);
+    if (c.proveedor.length > e.name.length) e.name = c.proveedor; // grafía más descriptiva
+    if (esDirecta(c.modalidad) || /m[ií]nima cuant/i.test(c.modalidad)) e.frac += 1;
+    map.set(key, e);
   }
-  const arr = [...map.entries()].map(([name, e]) => ({ name, ...e }));
+  const arr = [...map.values()];
   return {
     porNumero: [...arr].sort((a, b) => b.count - a.count).slice(0, 10),
     porValor:  [...arr].sort((a, b) => b.valor - a.valor).slice(0, 10),
+    todos: arr,
     totalProveedores: arr.length,
   };
 }
@@ -247,18 +265,13 @@ function computeAlertas(contracts, top) {
     return !isNaN(d) && d.getMonth() === 11;
   });
 
-  // 4. Posible fraccionamiento: un mismo contratista con 5+ contratos por
-  //    contratación directa o mínima cuantía (eludir licitación fraccionando
-  //    contratos viola el principio de transparencia de la Ley 80/1993)
-  const fracMap = new Map();
-  for (const c of contracts) {
-    if (!proveedorValido(c.proveedor)) continue;
-    if (!(esDirecta(c.modalidad) || /m[ií]nima cuant/i.test(c.modalidad))) continue;
-    fracMap.set(c.proveedor, (fracMap.get(c.proveedor) ?? 0) + 1);
-  }
-  const fraccionamiento = [...fracMap.entries()]
-    .filter(([, n]) => n >= 5)
-    .sort((a, b) => b[1] - a[1]);
+  // 4. Posible fraccionamiento: un mismo contratista (por NIT) con 5+
+  //    contratos por contratación directa o mínima cuantía (eludir licitación
+  //    fraccionando contratos viola la transparencia de la Ley 80/1993)
+  const fraccionamiento = top.todos
+    .filter(t => t.frac >= 5)
+    .sort((a, b) => b.frac - a.frac)
+    .map(t => ({ nit: t.nit, name: t.name, count: t.frac }));
 
   return {
     valorTotal,
@@ -284,8 +297,11 @@ function renderAlertas(a, totalContratos) {
   const pctTop10        = a.valorTotal ? a.top10Valor / a.valorTotal * 100 : 0;
   const pctDiciembre    = a.diciembreCount / totalContratos * 100;
 
+  // acepta objetos {nit,name,count} (formato actual) o pares [name,count]
+  // (resumen.json generado por versiones anteriores del script)
   const topFrac = a.fraccionamiento.slice(0, 3)
-    .map(([name, n]) => `<button class="link-contratista" data-proveedor="${esc(name)}">${esc(name)} (${n})</button>`)
+    .map(f => Array.isArray(f) ? { name: f[0], count: f[1], nit: '' } : f)
+    .map(f => `<button class="link-contratista" data-proveedor="${esc(f.nit || f.name)}">${esc(f.name)} (${f.count})</button>`)
     .join(', ');
 
   el.innerHTML = `
@@ -361,7 +377,10 @@ function renderTopList(containerId, items, metricFn) {
   el.innerHTML = items.map((t, i) => `
     <li class="top-item">
       <span class="top-rank">${String(i + 1).padStart(2, '0')}</span>
-      <button class="top-name link-contratista" data-proveedor="${esc(t.name)}" title="Filtrar por ${esc(t.name)}">${esc(t.name)}</button>
+      <span class="top-id">
+        <button class="top-name link-contratista" data-proveedor="${esc(t.nit || t.name)}" title="Filtrar por ${esc(t.name)}">${esc(t.name)}</button>
+        ${t.nit ? `<span class="top-nit">NIT ${esc(t.nit)}</span>` : ''}
+      </span>
       <span class="top-metric">${metricFn(t)}</span>
     </li>`).join('');
   el.querySelectorAll('.link-contratista').forEach(btn => {
@@ -565,11 +584,10 @@ function applyFilters() {
     if (modalidad && c.modalidad !== modalidad)  return false;
     if (estado    && c.estado    !== estado)     return false;
     if (search) {
-      const hay = c.proveedor.toLowerCase().includes(search) ||
-                  c.objeto.toLowerCase().includes(search)    ||
-                  c.entidad.toLowerCase().includes(search)   ||
-                  c.docProveedor.toLowerCase().includes(search);
-      if (!hay) return false;
+      // Búsqueda por palabras clave: todas las palabras deben aparecer
+      // (en cualquier orden) en contratista, NIT, objeto o entidad.
+      const hay = `${c.proveedor} ${c.docProveedor ?? ''} ${c.objeto} ${c.entidad}`.toLowerCase();
+      if (!search.split(/\s+/).every(word => hay.includes(word))) return false;
     }
     return true;
   });

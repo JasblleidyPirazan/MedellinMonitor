@@ -20,10 +20,12 @@ Principios de diseño:
 
 ```
 MedellinMonitor/
-├── index.html                      # Única página del sitio (estructura del dashboard)
+├── index.html                      # Dashboard principal (KPIs, alertas, tops, filtros, tabla)
+├── graficos.html                   # Página de gráficos claves (serie mensual, modalidad, tops)
 ├── assets/
-│   ├── app.js                      # Toda la lógica: fetch, normalización, filtros, render
-│   └── styles.css                  # Estilos "terminal" (tema oscuro, JetBrains Mono)
+│   ├── app.js                      # Lógica del dashboard: fetch, normalización, filtros, render
+│   ├── graficos.js                 # Lógica de la página de gráficos (consume data/resumen.json)
+│   └── styles.css                  # Tema claro, paleta Venseremos, JetBrains Mono
 ├── fetch_data.py                   # Script Python: pre-genera data/contratos.json
 ├── data/
 │   └── contratos.json              # (generado) snapshot de contratos — no versionado por defecto
@@ -152,7 +154,8 @@ Un solo archivo, sin dependencias, organizado en secciones:
 - **NORMALIZE**: mapeo de campos SECOP → esquema interno (ver tabla anterior).
 - **UTILS**: `formatCOP` (abrevia valores: `K` miles, `M` millones, `MM` miles de millones, `B` billones), `formatDate` (locale `es-CO`), `estadoColor` (colorea el estado del contrato), `esc` (escape HTML contra XSS — todo dato de la API pasa por aquí antes de insertarse en el DOM).
 - **FETCH**: la cascada de tres niveles descrita arriba.
-- **STATS**: `computeStats` agrega totales, contratos activos (estado contiene "activo" o "ejecuci"), conteo PyME y distribuciones por tipo y modalidad. `computeTopContratistas` calcula el top 10 de contratistas por número de contratos y por valor total (excluyendo valores placeholder como "No Definido" / "No Adjudicado").
+- **STATS**: `computeStats` agrega totales, contratos activos (estado contiene "activo" o "ejecuci"), conteo PyME y distribuciones por tipo y modalidad (entradas `[etiqueta, nº, valor]`). `computeTopContratistas` calcula el top 10 de contratistas **agrupando por NIT** (`documento_proveedor`) — un mismo contratista aparece en SECOP con varias grafías del nombre (p. ej. «ITM» / «INSTITUCIÓN UNIVERSITARIA ITM») y el NIT las unifica; se muestra la grafía más larga vista y el NIT. Sin NIT válido, el nombre hace de clave. Se excluyen placeholders ("No Definido" / "No Adjudicado").
+- **Búsqueda por palabras clave**: todas las palabras del cuadro de búsqueda deben aparecer (en cualquier orden) en contratista, NIT, objeto o entidad.
 - **ALERTAS DE VEEDURÍA**: `computeAlertas` calcula cuatro indicadores derivados de las normas de contratación colombiana, presentados con semáforo (verde/amarillo/rojo según umbrales):
   1. **% del valor por contratación directa** — mecanismo excepcional según Ley 1150 de 2007, art. 2 (media ≥30 %, alta ≥50 %).
   2. **Concentración**: % del valor total en el top 10 contratistas — pluralidad de oferentes, Ley 80 de 1993 (media ≥40 %, alta ≥60 %).
