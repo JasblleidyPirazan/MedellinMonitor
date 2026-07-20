@@ -3,6 +3,8 @@
 Veeduría ciudadana sobre la contratación pública del gobierno de Medellín 2024–2027.  
 Datos desde SECOP II (datos.gov.co) · API pública SODA · Colombia Compra Eficiente.
 
+📐 **Documentación técnica**: ver [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) (estructura, flujo de datos, modelo normalizado, mantenimiento).
+
 ---
 
 ## Cómo funciona
