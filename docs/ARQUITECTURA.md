@@ -41,16 +41,26 @@ No hay `package.json`, `node_modules` ni paso de compilación. Abrir `index.html
 |---|---|
 | Dataset | SECOP II — Contratos Electrónicos (`jbjy-vk9h`) |
 | API | Socrata Open Data API (SODA) — `https://www.datos.gov.co/resource/jbjy-vk9h.json` |
-| Filtro | `ciudad='Medellín' AND fecha_de_firma >= '2024-01-01'` |
-| Orden | `fecha_de_firma DESC` |
+| Filtro | `upper(ciudad) like '%MEDELL%' AND fecha_de_firma >= '2024-01-01'` |
+| Orden | `fecha_de_firma DESC` (el script añade `id_contrato DESC` para paginación estable) |
 | Operador | Colombia Compra Eficiente / MinTIC |
 | Licencia | Datos abiertos, uso libre con atribución |
 
-La consulta se hace con parámetros SoQL (`$where`, `$limit`, `$offset`, `$order`) directamente sobre el endpoint JSON, sin necesidad de token de aplicación.
+La consulta se hace con parámetros SoQL (`$where`, `$limit`, `$offset`, `$order`) directamente sobre el endpoint JSON. No requiere token, pero `fetch_data.py` acepta uno opcional vía la variable de entorno `SOCRATA_APP_TOKEN` (evita límites de velocidad; token gratuito en dev.socrata.com).
+
+### El nombre de Medellín en el dataset (crítico)
+
+Medellín **no aparece con un único nombre** en el campo `ciudad`. Según cómo registró cada entidad su ubicación, puede aparecer como:
+
+- `Medellín`
+- `Medellin` (sin tilde)
+- `Distrito Especial de Ciencia, Tecnología e Innovación de Medellín` (nuevo nombre oficial tras la Ley 2286 de 2023)
+
+Por eso el filtro usa `upper(ciudad) LIKE '%MEDELL%'` en lugar de una igualdad exacta — **un `ciudad='Medellín'` exacto pierde contratos**. Si se toca el filtro, mantener este criterio en ambos sitios (`fetch_data.py` y `assets/app.js`).
 
 ### Particularidades del dataset (importantes al mantener el código)
 
-- El campo del contratista es **`proveedor_adjudicado`** (no `nombre_del_contratista_proveedor`, que existe en otros datasets de SECOP).
+- El campo del contratista es **`proveedor_adjudicado`** (no `nombre_del_contratista_proveedor`, que existe en otros datasets de SECOP). El NIT/documento está en `documento_proveedor`.
 - El campo de duración tiene tilde en el nombre original, así que la API puede exponerlo como `duración_del_contrato` **o** `duraci_n_del_contrato` — el código contempla ambos.
 - `urlproceso` a veces llega como string y a veces como objeto `{ url: "..." }` — la normalización maneja los dos casos.
 - `es_pyme` llega como texto (`'Sí'`, `'Si'`, `'1'`), no como booleano.
@@ -101,6 +111,7 @@ Tanto `fetch_data.py` como `app.js` implementan la misma función `normalize()` 
 | `valorPendiente` | `valor_pendiente_de_ejecucion` | number (COP) |
 | `fechaFirma` / `fechaInicio` / `fechaFin` | `fecha_de_firma` / `fecha_de_inicio_del_contrato` / `fecha_de_fin_del_contrato` | string ISO |
 | `proveedor` | `proveedor_adjudicado` | string |
+| `docProveedor` | `documento_proveedor` | string |
 | `esPyme` | `es_pyme` (`'Sí'`/`'Si'`/`'1'`) | boolean |
 | `duracion` | `duración_del_contrato` ∥ `duraci_n_del_contrato` | string |
 | `url` | `urlproceso` (string u objeto `{url}`) | string |
@@ -130,10 +141,18 @@ Un solo archivo, sin dependencias, organizado en secciones:
 - **NORMALIZE**: mapeo de campos SECOP → esquema interno (ver tabla anterior).
 - **UTILS**: `formatCOP` (abrevia valores: `K` miles, `M` millones, `MM` miles de millones, `B` billones), `formatDate` (locale `es-CO`), `estadoColor` (colorea el estado del contrato), `esc` (escape HTML contra XSS — todo dato de la API pasa por aquí antes de insertarse en el DOM).
 - **FETCH**: la cascada de tres niveles descrita arriba.
-- **STATS**: `computeStats` agrega totales, contratos activos (estado contiene "activo" o "ejecuci"), conteo PyME y distribuciones por tipo y modalidad.
-- **RENDER**: KPIs (4 tarjetas), gráficos de barras horizontales (top 8 por tipo y por modalidad, generados como HTML/CSS puro, sin librería de gráficos), tabla paginada y paginador.
-- **FILTERS**: cuatro selects (entidad, tipo, modalidad, estado — poblados dinámicamente con los valores únicos de los datos) más búsqueda de texto libre (con debounce de 200 ms) sobre proveedor, objeto y entidad. Todos los KPIs y gráficos se recalculan sobre el subconjunto filtrado.
-- **INIT**: orquesta todo y maneja el estado de error (overlay con mensaje si la API falla).
+- **STATS**: `computeStats` agrega totales, contratos activos (estado contiene "activo" o "ejecuci"), conteo PyME y distribuciones por tipo y modalidad. `computeTopContratistas` calcula el top 10 de contratistas por número de contratos y por valor total (excluyendo valores placeholder como "No Definido" / "No Adjudicado").
+- **ALERTAS DE VEEDURÍA**: `computeAlertas` calcula cuatro indicadores derivados de las normas de contratación colombiana, presentados con semáforo (verde/amarillo/rojo según umbrales):
+  1. **% del valor por contratación directa** — mecanismo excepcional según Ley 1150 de 2007, art. 2 (media ≥30 %, alta ≥50 %).
+  2. **Concentración**: % del valor total en el top 10 contratistas — pluralidad de oferentes, Ley 80 de 1993 (media ≥40 %, alta ≥60 %).
+  3. **Contratos firmados en diciembre** — riesgo de ejecución afanada al cierre de vigencia (media ≥15 %, alta ≥25 % del total).
+  4. **Posible fraccionamiento**: contratistas con 5+ contratos por contratación directa o mínima cuantía — el fraccionamiento para eludir licitación viola el principio de transparencia (Ley 80 de 1993). Muestra los 3 principales, clicables.
+  Las alertas son indicadores estadísticos para investigar, no acusaciones (así se aclara en el footer).
+- **RENDER**: KPIs (4 tarjetas), gráficos de barras horizontales (top 8 por tipo y por modalidad, HTML/CSS puro, sin librería de gráficos), listas de top contratistas (clic en un nombre → filtra la tabla por ese contratista), tarjetas de alertas, tabla paginada con encabezado fijo (sticky) y paginador.
+- **SORT**: las columnas VALOR y FECHA FIRMA son ordenables (clic alterna asc/desc, con `aria-sort`).
+- **EXPORT**: botón "Exportar CSV" descarga los contratos filtrados (separador `;`, BOM UTF-8 para Excel).
+- **FILTERS**: cuatro selects (entidad, tipo, modalidad, estado — poblados dinámicamente con los valores únicos de los datos) más búsqueda de texto libre (con debounce de 200 ms) sobre proveedor, NIT (`docProveedor`), objeto y entidad. KPIs, gráficos, tops y alertas se recalculan sobre el subconjunto filtrado.
+- **INIT**: orquesta todo y maneja el estado de error (overlay con mensaje si la API falla). El badge del header muestra la fecha real del snapshot (`payload.updated`) cuando se carga desde archivo, o "consultado en vivo" cuando viene de la API.
 
 ### UI (`index.html` + `assets/styles.css`)
 
@@ -147,9 +166,10 @@ Secciones de la página, en orden: overlay de carga → header con marca y fecha
 
 Script de Python 3 (única dependencia: `requests`):
 
-1. Descarga **todos** los contratos que cumplen el filtro, paginando con `$offset` en lotes de 5.000 y esperando 0,5 s entre lotes (cortesía con la API pública).
-2. Normaliza cada registro con la misma lógica del frontend.
-3. Escribe `data/contratos.json` (UTF-8, indentado, con metadatos `updated`/`total`).
+1. Descarga **todos** los contratos que cumplen el filtro, paginando con `$offset` en lotes de 5.000 y esperando 0,5 s entre lotes (cortesía con la API pública). Cada lote se reintenta hasta 4 veces con backoff exponencial si la API falla.
+2. Normaliza cada registro con la misma lógica del frontend y **deduplica** (la paginación puede repetir registros si el dataset cambia entre lotes; por eso el orden incluye `id_contrato` como desempate).
+3. **Se niega a escribir un snapshot vacío**: si la API devuelve 0 contratos, sale con error para no sobrescribir datos buenos (protege al workflow automático).
+4. Escribe `data/contratos.json` (UTF-8, indentado, con metadatos `updated`/`total`/`ciudades` — esta última lista las variantes del nombre de Medellín encontradas).
 
 Uso manual:
 
@@ -163,6 +183,8 @@ python fetch_data.py
 GitHub Action que:
 
 - Corre **cada lunes a las 8:00 UTC** (3:00 a.m. hora de Medellín) y también manualmente vía `workflow_dispatch`.
+- Declara `permissions: contents: write` — **sin esto el push del commit automático falla** (el token por defecto de Actions es de solo lectura en repos nuevos).
+- Pasa el secreto opcional `SOCRATA_APP_TOKEN` al script (crearlo en Settings → Secrets del repo si la API limita las peticiones).
 - Ejecuta `fetch_data.py` en Python 3.11 y hace commit automático de `data/contratos.json` (con `[skip ci]`) usando `stefanzweifel/git-auto-commit-action`.
 
 Así, un despliegue que sirva el repo directamente (p. ej. GitHub Pages) se mantiene actualizado sin intervención.
@@ -184,8 +206,9 @@ No hay variables de entorno, secretos ni configuración de servidor. El único r
 
 Puntos a tener en cuenta al modificar el proyecto:
 
-- **Doble implementación de `normalize()`**: cualquier cambio de esquema debe aplicarse en `fetch_data.py` **y** en `assets/app.js`.
-- **Cambio de ciudad o periodo**: ajustar las constantes `CIUDAD` y `FECHA_INICIO` en ambos archivos (el proyecto es un fork conceptual de "CaliMonitor" — mismo patrón aplicado a otra ciudad).
+- **Doble implementación de `normalize()` y del filtro `WHERE`**: cualquier cambio de esquema o de criterio de ciudad debe aplicarse en `fetch_data.py` **y** en `assets/app.js`.
+- **Cambio de ciudad o periodo**: ajustar el filtro de ciudad (`WHERE`/`WHERE_CIUDAD`) y `FECHA_INICIO` en ambos archivos (el proyecto es un fork conceptual de "CaliMonitor" — mismo patrón aplicado a otra ciudad). Recordar que las ciudades pueden tener múltiples variantes de nombre en SECOP.
+- **Umbrales de las alertas**: los porcentajes de semáforo viven en `renderAlertas`/`nivelAlerta` en `app.js`; son heurísticos y ajustables. Al cambiarlos, documentar el criterio.
 - **Límites de la API**: la ruta en vivo trae máximo 5.000 registros; si Medellín supera ese volumen visible, la única ruta completa es el snapshot.
 - **Cambios en el dataset de SECOP**: los nombres de campo están verificados contra `jbjy-vk9h`; si Colombia Compra Eficiente renombra campos, se rompe la normalización silenciosamente (los campos caen al valor por defecto `'—'` o `0`).
 - **Seguridad**: todo dato externo se escapa con `esc()` antes de insertarse con `innerHTML`. Mantener esa disciplina en cualquier render nuevo.

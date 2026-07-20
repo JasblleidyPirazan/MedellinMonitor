@@ -66,9 +66,17 @@ Para activarlo: haz push del repo a GitHub y activa los workflows en la pestaña
 
 - **Dataset**: SECOP II Contratos Electrónicos — `jbjy-vk9h`
 - **API**: Socrata Open Data API (SODA) — `datos.gov.co`
-- **Filtro**: `ciudad='Medellín'` desde `2024-01-01`
+- **Filtro**: `upper(ciudad) LIKE '%MEDELL%'` desde `2024-01-01` — cubre «Medellín», «Medellin» y «Distrito Especial de Ciencia, Tecnología e Innovación de Medellín»
 - **Operador**: Colombia Compra Eficiente / MinTIC
 - **Licencia**: Datos abiertos — uso libre con atribución
+
+## Qué muestra el dashboard
+
+- **KPIs**: número de contratos, valor total, contratos activos y contratos a PyME.
+- **Alertas de veeduría** (semáforo verde/amarillo/rojo) basadas en las normas de contratación colombiana (Ley 80 de 1993, Ley 1150 de 2007): % del dinero por contratación directa, concentración del valor en el top 10 de contratistas, contratos firmados en diciembre y posible fraccionamiento (contratistas con 5+ contratos directos).
+- **Top contratistas**: por número de contratos y por dinero contratado (clic en un nombre filtra la tabla).
+- **Distribuciones** por tipo de contrato y modalidad.
+- **Tabla** filtrable (entidad, tipo, modalidad, estado, búsqueda por contratista/NIT/objeto), ordenable por valor y fecha, con exportación a CSV y enlace a la ficha de cada proceso en SECOP.
 
 ---
 

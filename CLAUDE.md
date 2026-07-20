@@ -24,8 +24,8 @@ Dashboard estático de veeduría ciudadana sobre la contratación pública de Me
 ## Reglas importantes
 
 1. **`normalize()` está duplicada** en `fetch_data.py` y `assets/app.js`. Cualquier cambio al esquema de contrato debe hacerse en ambos archivos, con la misma semántica.
-2. **Nombres de campo de SECOP II** (verificados contra `jbjy-vk9h`): el contratista es `proveedor_adjudicado`; la duración puede llegar como `duración_del_contrato` o `duraci_n_del_contrato`; `urlproceso` puede ser string u objeto `{url}`; `es_pyme` es texto (`'Sí'`/`'Si'`/`'1'`). No "corregir" estos mapeos sin verificar contra la API real.
+2. **Nombres de campo de SECOP II** (verificados contra `jbjy-vk9h`): el contratista es `proveedor_adjudicado` (NIT en `documento_proveedor`); la duración puede llegar como `duración_del_contrato` o `duraci_n_del_contrato`; `urlproceso` puede ser string u objeto `{url}`; `es_pyme` es texto (`'Sí'`/`'Si'`/`'1'`). No "corregir" estos mapeos sin verificar contra la API real.
 3. **Escapar siempre** los datos de la API con `esc()` antes de insertarlos en el DOM con `innerHTML` (prevención XSS).
-4. Las constantes `CIUDAD` y `FECHA_INICIO` existen en `app.js` y `fetch_data.py`; cambiarlas en ambos si se ajusta el alcance.
+4. **El filtro de ciudad es `upper(ciudad) LIKE '%MEDELL%'`**, no una igualdad: Medellín aparece como «Medellín», «Medellin» y «Distrito Especial de Ciencia, Tecnología e Innovación de Medellín». El filtro y `FECHA_INICIO` están duplicados en `app.js` (`WHERE_CIUDAD`) y `fetch_data.py` (`WHERE`); cambiarlos en ambos.
 5. Mantener el proyecto libre de dependencias/build: la compatibilidad con hosting cPanel básico es un requisito del proyecto.
 6. Idioma del proyecto (UI, comentarios, commits, docs): español.
