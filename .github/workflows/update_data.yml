@@ -5,6 +5,11 @@ on:
     - cron: '0 8 * * 1'   # Cada lunes a las 8am UTC (3am Medellín)
   workflow_dispatch:        # Ejecución manual desde GitHub Actions
 
+# Sin este permiso el token del workflow no puede hacer push del commit
+# automático y la actualización falla silenciosamente.
+permissions:
+  contents: write
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -19,6 +24,10 @@ jobs:
         run: pip install requests
 
       - name: Descargar contratos desde SECOP II
+        env:
+          # Opcional: crear el secreto SOCRATA_APP_TOKEN en el repo para
+          # evitar límites de velocidad de la API pública de datos.gov.co
+          SOCRATA_APP_TOKEN: ${{ secrets.SOCRATA_APP_TOKEN }}
         run: python fetch_data.py
 
       - name: Confirmar y subir cambios

@@ -10,12 +10,16 @@ Uso:
     pip install requests
     python fetch_data.py
 
+Opcional: exporta SOCRATA_APP_TOKEN para evitar límites de velocidad
+de la API pública (token gratuito en https://dev.socrata.com/).
+
 Luego sube data/contratos.json junto con index.html, assets/ al cPanel.
 
 Para automatización semanal, ver .github/workflows/update_data.yml
 """
 
 import json
+import os
 import time
 import sys
 from datetime import datetime, timezone
@@ -29,10 +33,20 @@ except ImportError:
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 SECOP_URL    = 'https://www.datos.gov.co/resource/jbjy-vk9h.json'
-CIUDAD       = 'Medellín'
 FECHA_INICIO = '2024-01-01T00:00:00.000'   # gobierno Fico
 BATCH_SIZE   = 5000
+MAX_RETRIES  = 4
 OUTPUT_FILE  = Path(__file__).parent / 'data' / 'contratos.json'
+
+# Medellín aparece en SECOP II con varios nombres según cómo registró la
+# entidad su ubicación: "Medellín", "Medellin" (sin tilde) y, tras el cambio
+# de categoría del municipio (Ley 2286 de 2023), "Distrito Especial de
+# Ciencia, Tecnología e Innovación de Medellín". Un igual exacto pierde
+# contratos; el LIKE sobre upper() captura todas las variantes.
+WHERE = (
+    "upper(ciudad) like '%MEDELL%' "
+    f"AND fecha_de_firma >= '{FECHA_INICIO}'"
+)
 
 # ─── NORMALIZE ────────────────────────────────────────────────────────────────
 # Field names exactos de SECOP II (jbjy-vk9h) — verificados contra la API
@@ -56,28 +70,45 @@ def normalize(raw: dict) -> dict:
         'fechaFin':       raw.get('fecha_de_fin_del_contrato', ''),
         # SECOP II usa "proveedor_adjudicado", no "nombre_del_contratista_proveedor"
         'proveedor':      raw.get('proveedor_adjudicado', '—'),
+        'docProveedor':   raw.get('documento_proveedor', ''),
         'esPyme':         raw.get('es_pyme') in ('Sí', 'Si', '1', True),
         'duracion':       raw.get('duración_del_contrato') or raw.get('duraci_n_del_contrato', '—'),
         'url':            url,
-        'ciudad':         raw.get('ciudad', CIUDAD),
+        'ciudad':         raw.get('ciudad', 'Medellín'),
     }
 
 # ─── FETCH ────────────────────────────────────────────────────────────────────
 def fetch_batch(session: requests.Session, offset: int) -> list:
     params = {
-        '$where':  f"ciudad='{CIUDAD}' AND fecha_de_firma >= '{FECHA_INICIO}'",
+        '$where':  WHERE,
         '$limit':  BATCH_SIZE,
         '$offset': offset,
-        '$order':  'fecha_de_firma DESC',
+        # Orden estable (fecha + id) para que la paginación no duplique
+        # ni salte registros si el dataset cambia entre lotes.
+        '$order':  'fecha_de_firma DESC, id_contrato DESC',
     }
-    resp = session.get(SECOP_URL, params=params, timeout=60)
-    resp.raise_for_status()
-    return resp.json()
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = session.get(SECOP_URL, params=params, timeout=120)
+            resp.raise_for_status()
+            return resp.json()
+        except (requests.RequestException, ValueError) as e:
+            last_error = e
+            wait = 2 ** (attempt + 1)
+            print(f'\n  ⚠ intento {attempt + 1}/{MAX_RETRIES} falló ({e}); reintentando en {wait}s…')
+            time.sleep(wait)
+    raise RuntimeError(f'API no disponible tras {MAX_RETRIES} intentos: {last_error}')
 
 def fetch_all() -> list:
-    session   = requests.Session()
-    all_raw   = []
-    offset    = 0
+    session = requests.Session()
+    token = os.environ.get('SOCRATA_APP_TOKEN')
+    if token:
+        session.headers['X-App-Token'] = token
+        print('Usando SOCRATA_APP_TOKEN')
+
+    all_raw = []
+    offset  = 0
 
     while True:
         print(f'  lote offset={offset:,}… ', end='', flush=True)
@@ -91,20 +122,41 @@ def fetch_all() -> list:
 
     return all_raw
 
+def dedupe(contracts: list) -> list:
+    """Elimina duplicados (la paginación puede repetir registros)."""
+    seen, unique = set(), []
+    for c in contracts:
+        key = (c['id'], c['proveedor'], c['fechaFirma'], c['valor'])
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(c)
+    return unique
+
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 def main():
-    print(f'Descargando contratos — ciudad="{CIUDAD}" desde {FECHA_INICIO[:10]}')
+    print(f'Descargando contratos de Medellín (todas las variantes del nombre) desde {FECHA_INICIO[:10]}')
     OUTPUT_FILE.parent.mkdir(exist_ok=True)
 
     raw_records = fetch_all()
 
     print(f'Normalizando {len(raw_records):,} registros…')
-    contracts = [normalize(r) for r in raw_records]
+    contracts = dedupe([normalize(r) for r in raw_records])
+
+    # Nunca sobrescribir un snapshot bueno con uno vacío (p. ej. si la API
+    # respondió pero el filtro no trajo nada): fallar en voz alta.
+    if not contracts:
+        print('✗ La API devolvió 0 contratos — se conserva el snapshot anterior.')
+        sys.exit(1)
+
+    ciudades = sorted({c['ciudad'] for c in contracts})
+    print(f'Variantes de ciudad encontradas: {ciudades}')
 
     payload = {
         'updated':   datetime.now(timezone.utc).isoformat(),
         'total':     len(contracts),
-        'ciudad':    CIUDAD,
+        'ciudad':    'Medellín',
+        'ciudades':  ciudades,
         'contracts': contracts,
     }
 

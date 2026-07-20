@@ -1,0 +1,20 @@
+# Configuración de despliegue para Netlify
+# Sitio 100% estático — no requiere build.
+
+[build]
+  publish = "."
+  command = ""
+
+# Cabeceras de seguridad y caché
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# El JSON de datos puede cambiar cada semana → caché corta
+[[headers]]
+  for = "/data/contratos.json"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

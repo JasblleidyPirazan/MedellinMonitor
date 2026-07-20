@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Monitor de Contratación Medellín — Venseremos</title>
   <meta name="description" content="Veeduría ciudadana sobre la contratación pública del gobierno de Medellín 2024–2027. Datos en tiempo real desde SECOP II.">
+  <meta name="theme-color" content="#7010A6">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/styles.css">
@@ -12,9 +13,9 @@
 <body>
 
   <!-- Loading overlay -->
-  <div id="loading" class="loading-overlay">
+  <div id="loading" class="loading-overlay" role="status" aria-live="polite">
     <div class="loading-inner">
-      <div class="spinner"></div>
+      <div class="spinner" aria-hidden="true"></div>
       <p id="loading-text">Conectando con datos.gov.co…</p>
       <p id="loading-sub" class="loading-sub"></p>
     </div>
@@ -24,7 +25,7 @@
   <header class="site-header">
     <div class="header-inner">
       <div class="brand">
-        <div class="brand-icon">⬡</div>
+        <div class="brand-icon" aria-hidden="true">⬡</div>
         <div class="brand-text">
           <h1>MONITOR DE CONTRATACIÓN</h1>
           <span class="brand-sub">Medellín · Gobierno Fico 2024–2027 · Veeduría ciudadana por <strong>Venseremos</strong></span>
@@ -39,27 +40,45 @@
   <main class="main-content">
 
     <!-- KPIs -->
-    <section class="kpi-grid">
+    <section class="kpi-grid" aria-label="Indicadores generales">
       <div class="kpi-card">
         <span class="kpi-label">// CONTRATOS</span>
-        <span class="kpi-value" id="kpi-total" style="color: var(--white)">—</span>
+        <span class="kpi-value kpi-value--white" id="kpi-total">—</span>
       </div>
       <div class="kpi-card">
         <span class="kpi-label">// VALOR TOTAL</span>
-        <span class="kpi-value" id="kpi-valor" style="color: var(--green)">—</span>
+        <span class="kpi-value kpi-value--yellow" id="kpi-valor">—</span>
       </div>
       <div class="kpi-card">
         <span class="kpi-label">// ACTIVOS</span>
-        <span class="kpi-value" id="kpi-activos" style="color: var(--yellow)">—</span>
+        <span class="kpi-value kpi-value--green" id="kpi-activos">—</span>
       </div>
       <div class="kpi-card">
         <span class="kpi-label">// PyME</span>
-        <span class="kpi-value" id="kpi-pyme" style="color: var(--orange)">—</span>
+        <span class="kpi-value kpi-value--purple" id="kpi-pyme">—</span>
+      </div>
+    </section>
+
+    <!-- Alertas de veeduría -->
+    <section class="terminal-panel" aria-label="Alertas de veeduría">
+      <div class="panel-title">▶ ALERTAS DE VEEDURÍA <span class="panel-note">— indicadores para investigar, según normas de contratación (Ley 80/1993 · Ley 1150/2007)</span></div>
+      <div class="alertas-grid" id="alertas-grid"></div>
+    </section>
+
+    <!-- Top contratistas -->
+    <section class="charts-row" aria-label="Top contratistas">
+      <div class="terminal-panel">
+        <div class="panel-title">▶ TOP CONTRATISTAS — POR NÚMERO DE CONTRATOS</div>
+        <ol class="top-list" id="top-numero"></ol>
+      </div>
+      <div class="terminal-panel">
+        <div class="panel-title">▶ TOP CONTRATISTAS — POR DINERO CONTRATADO</div>
+        <ol class="top-list" id="top-valor"></ol>
       </div>
     </section>
 
     <!-- Charts -->
-    <section class="charts-row">
+    <section class="charts-row" aria-label="Distribuciones">
       <div class="terminal-panel">
         <div class="panel-title">▶ DISTRIBUCIÓN POR TIPO DE CONTRATO</div>
         <div id="chart-tipo-bars"></div>
@@ -71,51 +90,55 @@
     </section>
 
     <!-- Filters -->
-    <section class="terminal-panel">
+    <section class="terminal-panel" aria-label="Filtros">
       <div class="panel-title">▶ FILTROS</div>
       <div class="filters-grid">
         <div class="filter-group">
-          <label class="filter-label">ENTIDAD</label>
+          <label class="filter-label" for="filter-entidad">ENTIDAD</label>
           <select id="filter-entidad" class="filter-select"><option value="">Todas</option></select>
         </div>
         <div class="filter-group">
-          <label class="filter-label">TIPO DE CONTRATO</label>
+          <label class="filter-label" for="filter-tipo">TIPO DE CONTRATO</label>
           <select id="filter-tipo" class="filter-select"><option value="">Todos</option></select>
         </div>
         <div class="filter-group">
-          <label class="filter-label">MODALIDAD</label>
+          <label class="filter-label" for="filter-modalidad">MODALIDAD</label>
           <select id="filter-modalidad" class="filter-select"><option value="">Todas</option></select>
         </div>
         <div class="filter-group">
-          <label class="filter-label">ESTADO</label>
+          <label class="filter-label" for="filter-estado">ESTADO</label>
           <select id="filter-estado" class="filter-select"><option value="">Todos</option></select>
         </div>
         <div class="filter-group filter-group--wide">
-          <label class="filter-label">BUSCAR CONTRATISTA / NIT / OBJETO</label>
+          <label class="filter-label" for="search-input">BUSCAR CONTRATISTA / NIT / OBJETO</label>
           <input type="text" id="search-input" class="filter-input" placeholder="Nombre, NIT o palabras del objeto del contrato…">
         </div>
       </div>
       <div class="filters-footer">
-        <span class="results-count" id="results-count">— contratos</span>
-        <button class="btn-reset" id="btn-reset">✕ Limpiar filtros</button>
+        <span class="results-count" id="results-count" aria-live="polite">— contratos</span>
+        <div class="filters-actions">
+          <button class="btn-secondary" id="btn-export" title="Descargar los contratos filtrados en CSV">⬇ Exportar CSV</button>
+          <button class="btn-reset" id="btn-reset">✕ Limpiar filtros</button>
+        </div>
       </div>
     </section>
 
     <!-- Table -->
-    <section class="terminal-panel">
+    <section class="terminal-panel" aria-label="Tabla de contratos">
       <div class="panel-title">▶ CONTRATOS</div>
       <div class="table-wrapper">
         <table class="contracts-table" id="contracts-table">
+          <caption class="sr-only">Contratos públicos de Medellín. Las columnas Valor y Fecha de firma permiten ordenar.</caption>
           <thead>
             <tr>
-              <th>ENTIDAD</th>
-              <th>OBJETO DEL CONTRATO</th>
-              <th>CONTRATISTA</th>
-              <th>MODALIDAD</th>
-              <th>VALOR</th>
-              <th>FECHA FIRMA</th>
-              <th>ESTADO</th>
-              <th></th>
+              <th scope="col">ENTIDAD</th>
+              <th scope="col">OBJETO DEL CONTRATO</th>
+              <th scope="col">CONTRATISTA</th>
+              <th scope="col">MODALIDAD</th>
+              <th scope="col" data-sort="valor" class="th-sortable" aria-sort="none" title="Ordenar por valor">VALOR <span class="sort-indicator" aria-hidden="true">↕</span></th>
+              <th scope="col" data-sort="fechaFirma" class="th-sortable" aria-sort="none" title="Ordenar por fecha de firma">FECHA FIRMA <span class="sort-indicator" aria-hidden="true">↕</span></th>
+              <th scope="col">ESTADO</th>
+              <th scope="col"><span class="sr-only">Enlace a SECOP</span></th>
             </tr>
           </thead>
           <tbody id="table-body"></tbody>
@@ -132,6 +155,14 @@
         <span class="footer-label">Fuente:</span>
         <a href="https://www.datos.gov.co/resource/jbjy-vk9h" target="_blank" rel="noopener">SECOP II Contratos Electrónicos — datos.gov.co</a>
         · API SODA · Colombia Compra Eficiente · MinTIC
+      </div>
+      <div>
+        <span class="footer-label">Cobertura:</span>
+        Incluye entidades registradas como «Medellín» y como «Distrito Especial de Ciencia, Tecnología e Innovación de Medellín».
+      </div>
+      <div>
+        <span class="footer-label">Nota:</span>
+        Las alertas son indicadores estadísticos para la veeduría ciudadana, no acusaciones. Verifica cada contrato en SECOP.
       </div>
       <div>
         <span class="footer-label">Producido por:</span>

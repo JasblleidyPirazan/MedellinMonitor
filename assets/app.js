@@ -1,18 +1,27 @@
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
-const SECOP_URL   = 'https://www.datos.gov.co/resource/jbjy-vk9h.json';
-const CIUDAD      = 'Medellín';           // "Medellín"
+const SECOP_URL    = 'https://www.datos.gov.co/resource/jbjy-vk9h.json';
 const FECHA_INICIO = '2024-01-01T00:00:00.000'; // gobierno Fico
-const FETCH_LIMIT = 5000;
-const PAGE_SIZE   = 50;
-const CACHE_TTL   = 30 * 60 * 1000; // 30 min, igual que CaliMonitor
+const FETCH_LIMIT  = 5000;
+const PAGE_SIZE    = 50;
+const CACHE_TTL    = 30 * 60 * 1000; // 30 min
+
+// Medellín aparece en SECOP II con varios nombres: "Medellín", "Medellin"
+// (sin tilde) y "Distrito Especial de Ciencia, Tecnología e Innovación de
+// Medellín" (Ley 2286 de 2023). El LIKE sobre upper() captura todas.
+const WHERE_CIUDAD = "upper(ciudad) like '%MEDELL%'";
+
+// Valores de proveedor que no son un contratista real
+const PROVEEDOR_INVALIDO = /^(—|-|n\/?a|no definido|no adjudicado|no aplica)$/i;
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let allContracts      = [];
 let filteredContracts = [];
 let currentPage       = 0;
+let sortKey           = null;  // 'valor' | 'fechaFirma' | null (orden de la API)
+let sortDir           = -1;    // -1 desc, 1 asc
 
 // ─── NORMALIZE ────────────────────────────────────────────────────────────────
-// Field names verified against SECOP II (jbjy-vk9h) via CaliMonitor lib/contracts.ts
+// Field names verificados contra SECOP II (jbjy-vk9h)
 function normalize(raw) {
   const urlRaw = raw.urlproceso;
   const url = typeof urlRaw === 'object' && urlRaw !== null
@@ -34,11 +43,12 @@ function normalize(raw) {
     fechaFin:      raw.fecha_de_fin_del_contrato ?? '',
     // SECOP II usa "proveedor_adjudicado", no "nombre_del_contratista_proveedor"
     proveedor:     raw.proveedor_adjudicado ?? '—',
+    docProveedor:  raw.documento_proveedor ?? '',
     esPyme:        raw.es_pyme === 'Sí' || raw.es_pyme === 'Si' || raw.es_pyme === '1',
     // Nota: el campo tiene tilde en el nombre → 'duraci_n_del_contrato' en la API
     duracion:      raw['duración_del_contrato'] ?? raw['duraci_n_del_contrato'] ?? '—',
     url,
-    ciudad:        raw.ciudad ?? CIUDAD,
+    ciudad:        raw.ciudad ?? 'Medellín',
   };
 }
 
@@ -50,6 +60,11 @@ function formatCOP(val) {
   if (val >= 1e6)  return `$${(val / 1e6).toFixed(1)}M`;
   if (val >= 1e3)  return `$${(val / 1e3).toFixed(0)}K`;
   return `$${val.toLocaleString('es-CO')}`;
+}
+
+function formatPct(part, total) {
+  if (!total) return '0%';
+  return `${(part / total * 100).toFixed(1)}%`;
 }
 
 function formatDate(iso) {
@@ -79,20 +94,40 @@ function esc(str) {
     .replace(/"/g, '&quot;');
 }
 
+function proveedorValido(nombre) {
+  return nombre && !PROVEEDOR_INVALIDO.test(nombre.trim());
+}
+
+function esDirecta(modalidad) {
+  return /directa/i.test(modalidad);
+}
+
 function setLoading(text, sub) {
   document.getElementById('loading-text').textContent = text;
   document.getElementById('loading-sub').textContent  = sub;
 }
 
+function setUpdatedBadge(isoDate) {
+  const badge = document.getElementById('last-updated');
+  if (isoDate) {
+    const d = new Date(isoDate).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' });
+    badge.textContent = `// datos actualizados: ${d}`;
+  } else {
+    const now = new Date().toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' });
+    badge.textContent = `// consultado en vivo: ${now}`;
+  }
+}
+
 // ─── FETCH ────────────────────────────────────────────────────────────────────
 async function fetchContracts() {
-  // 1) Intentar archivo estático pre-generado (más rápido, para cPanel)
+  // 1) Intentar archivo estático pre-generado (más rápido, dataset completo)
   try {
     const res = await fetch('data/contratos.json');
     if (res.ok) {
       const payload = await res.json();
       if (payload.contracts && payload.contracts.length > 0) {
         setLoading(`Cargando ${payload.contracts.length.toLocaleString('es-CO')} contratos desde archivo local…`, '');
+        setUpdatedBadge(payload.updated);
         return payload.contracts;
       }
     }
@@ -106,14 +141,15 @@ async function fetchContracts() {
   if (cached && cachedTime && Date.now() - Number(cachedTime) < CACHE_TTL) {
     const data = JSON.parse(cached);
     setLoading(`Desde caché: ${data.length.toLocaleString('es-CO')} contratos`, '');
+    setUpdatedBadge(new Date(Number(cachedTime)).toISOString());
     return data;
   }
 
-  // 3) API en vivo
-  setLoading('Consultando SECOP II en datos.gov.co…', `Filtrando por ciudad="${CIUDAD}" desde ${FECHA_INICIO.slice(0,10)}`);
+  // 3) API en vivo (trae solo los FETCH_LIMIT contratos más recientes)
+  setLoading('Consultando SECOP II en datos.gov.co…', `Contratos de Medellín (todas las variantes del nombre) desde ${FECHA_INICIO.slice(0, 10)}`);
 
   const params = new URLSearchParams({
-    '$where': `ciudad='${CIUDAD}' AND fecha_de_firma >= '${FECHA_INICIO}'`,
+    '$where': `${WHERE_CIUDAD} AND fecha_de_firma >= '${FECHA_INICIO}'`,
     '$limit': String(FETCH_LIMIT),
     '$order': 'fecha_de_firma DESC',
   });
@@ -130,6 +166,7 @@ async function fetchContracts() {
     sessionStorage.setItem('medellin_contracts_ts', String(Date.now()));
   } catch { /* storage lleno, ignorar */ }
 
+  setUpdatedBadge(null);
   return contracts;
 }
 
@@ -159,6 +196,114 @@ function computeStats(contracts) {
   };
 }
 
+function computeTopContratistas(contracts) {
+  const map = new Map(); // proveedor → { count, valor }
+  for (const c of contracts) {
+    if (!proveedorValido(c.proveedor)) continue;
+    const e = map.get(c.proveedor) ?? { count: 0, valor: 0 };
+    e.count += 1;
+    e.valor += c.valor;
+    map.set(c.proveedor, e);
+  }
+  const arr = [...map.entries()].map(([name, e]) => ({ name, ...e }));
+  return {
+    porNumero: [...arr].sort((a, b) => b.count - a.count).slice(0, 10),
+    porValor:  [...arr].sort((a, b) => b.valor - a.valor).slice(0, 10),
+    totalProveedores: arr.length,
+  };
+}
+
+// ─── ALERTAS DE VEEDURÍA ──────────────────────────────────────────────────────
+// Señales de alerta derivadas de las normas de contratación colombiana
+// (Ley 80/1993, Ley 1150/2007, Decreto 1082/2015). Son indicadores para
+// investigar, no acusaciones: cada cifra invita a revisar los contratos.
+function computeAlertas(contracts, top) {
+  const valorTotal = contracts.reduce((s, c) => s + c.valor, 0);
+
+  // 1. Contratación directa (excepcional según Ley 1150/2007, art. 2 num. 4)
+  const directa      = contracts.filter(c => esDirecta(c.modalidad));
+  const directaValor = directa.reduce((s, c) => s + c.valor, 0);
+
+  // 2. Concentración: participación del top 10 contratistas en el valor total
+  const top10Valor = top.porValor.reduce((s, t) => s + t.valor, 0);
+
+  // 3. Contratos firmados en diciembre (riesgo de ejecución afanada de
+  //    presupuesto al cierre de vigencia)
+  const diciembre = contracts.filter(c => {
+    if (!c.fechaFirma) return false;
+    const d = new Date(c.fechaFirma);
+    return !isNaN(d) && d.getMonth() === 11;
+  });
+
+  // 4. Posible fraccionamiento: un mismo contratista con 5+ contratos por
+  //    contratación directa o mínima cuantía (eludir licitación fraccionando
+  //    contratos viola el principio de transparencia de la Ley 80/1993)
+  const fracMap = new Map();
+  for (const c of contracts) {
+    if (!proveedorValido(c.proveedor)) continue;
+    if (!(esDirecta(c.modalidad) || /m[ií]nima cuant/i.test(c.modalidad))) continue;
+    fracMap.set(c.proveedor, (fracMap.get(c.proveedor) ?? 0) + 1);
+  }
+  const fraccionamiento = [...fracMap.entries()]
+    .filter(([, n]) => n >= 5)
+    .sort((a, b) => b[1] - a[1]);
+
+  return { valorTotal, directa, directaValor, top10Valor, diciembre, fraccionamiento };
+}
+
+function nivelAlerta(pct, medio, alto) {
+  if (pct >= alto)  return 'alerta--alta';
+  if (pct >= medio) return 'alerta--media';
+  return 'alerta--baja';
+}
+
+function renderAlertas(a, totalContratos) {
+  const el = document.getElementById('alertas-grid');
+  if (!totalContratos) { el.innerHTML = ''; return; }
+
+  const pctDirectaValor = a.valorTotal ? a.directaValor / a.valorTotal * 100 : 0;
+  const pctTop10        = a.valorTotal ? a.top10Valor / a.valorTotal * 100 : 0;
+  const pctDiciembre    = a.diciembre.length / totalContratos * 100;
+
+  const topFrac = a.fraccionamiento.slice(0, 3)
+    .map(([name, n]) => `<button class="link-contratista" data-proveedor="${esc(name)}">${esc(name)} (${n})</button>`)
+    .join(', ');
+
+  el.innerHTML = `
+    <div class="alerta-card ${nivelAlerta(pctDirectaValor, 30, 50)}">
+      <span class="alerta-valor">${formatPct(a.directaValor, a.valorTotal)}</span>
+      <span class="alerta-titulo">del dinero por contratación directa</span>
+      <p class="alerta-desc">${a.directa.length.toLocaleString('es-CO')} contratos (${formatCOP(a.directaValor)}).
+      La contratación directa es un mecanismo excepcional — la regla general es la licitación pública
+      (Ley 1150 de 2007, art. 2).</p>
+    </div>
+    <div class="alerta-card ${nivelAlerta(pctTop10, 40, 60)}">
+      <span class="alerta-valor">${formatPct(a.top10Valor, a.valorTotal)}</span>
+      <span class="alerta-titulo">del dinero en solo 10 contratistas</span>
+      <p class="alerta-desc">${formatCOP(a.top10Valor)} concentrados en el top 10.
+      Alta concentración puede indicar baja pluralidad de oferentes, un principio de la
+      contratación estatal (Ley 80 de 1993).</p>
+    </div>
+    <div class="alerta-card ${nivelAlerta(pctDiciembre, 15, 25)}">
+      <span class="alerta-valor">${a.diciembre.length.toLocaleString('es-CO')}</span>
+      <span class="alerta-titulo">contratos firmados en diciembre</span>
+      <p class="alerta-desc">${formatPct(a.diciembre.length, totalContratos)} del total.
+      Concentración de firmas al cierre de vigencia puede señalar ejecución afanada del
+      presupuesto (principio de planeación).</p>
+    </div>
+    <div class="alerta-card ${a.fraccionamiento.length ? 'alerta--media' : 'alerta--baja'}">
+      <span class="alerta-valor">${a.fraccionamiento.length.toLocaleString('es-CO')}</span>
+      <span class="alerta-titulo">contratistas con 5+ contratos directos</span>
+      <p class="alerta-desc">Muchos contratos pequeños al mismo proveedor pueden indicar
+      fraccionamiento para eludir licitación, prohibido por el principio de transparencia
+      (Ley 80 de 1993).${topFrac ? ` Revisar: ${topFrac}.` : ''}</p>
+    </div>`;
+
+  el.querySelectorAll('.link-contratista').forEach(btn => {
+    btn.addEventListener('click', () => filtrarPorProveedor(btn.dataset.proveedor));
+  });
+}
+
 // ─── RENDER KPIs ──────────────────────────────────────────────────────────────
 function renderKPIs(stats) {
   document.getElementById('kpi-total').textContent   = stats.total.toLocaleString('es-CO');
@@ -171,7 +316,7 @@ function renderKPIs(stats) {
 function renderBars(containerId, entries, fillClass) {
   const el = document.getElementById(containerId);
   if (!entries.length) {
-    el.innerHTML = '<p style="color:var(--text-muted);font-size:11px">Sin datos</p>';
+    el.innerHTML = '<p class="sin-datos">Sin datos</p>';
     return;
   }
   const max = entries[0][1];
@@ -187,6 +332,92 @@ function renderBars(containerId, entries, fillClass) {
     </div>`).join('');
 }
 
+// ─── RENDER TOP CONTRATISTAS ──────────────────────────────────────────────────
+function renderTopList(containerId, items, metricFn) {
+  const el = document.getElementById(containerId);
+  if (!items.length) {
+    el.innerHTML = '<p class="sin-datos">Sin datos</p>';
+    return;
+  }
+  el.innerHTML = items.map((t, i) => `
+    <li class="top-item">
+      <span class="top-rank">${String(i + 1).padStart(2, '0')}</span>
+      <button class="top-name link-contratista" data-proveedor="${esc(t.name)}" title="Filtrar por ${esc(t.name)}">${esc(t.name)}</button>
+      <span class="top-metric">${metricFn(t)}</span>
+    </li>`).join('');
+  el.querySelectorAll('.link-contratista').forEach(btn => {
+    btn.addEventListener('click', () => filtrarPorProveedor(btn.dataset.proveedor));
+  });
+}
+
+function filtrarPorProveedor(nombre) {
+  document.getElementById('search-input').value = nombre;
+  applyFilters();
+  document.getElementById('contracts-table').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ─── SORT ─────────────────────────────────────────────────────────────────────
+function sortContracts(contracts) {
+  if (!sortKey) return contracts;
+  return [...contracts].sort((a, b) => {
+    const va = sortKey === 'valor' ? a.valor : (a.fechaFirma || '');
+    const vb = sortKey === 'valor' ? b.valor : (b.fechaFirma || '');
+    if (va < vb) return -sortDir;
+    if (va > vb) return sortDir;
+    return 0;
+  });
+}
+
+function setupSort() {
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (sortKey === key) {
+        sortDir = -sortDir;
+      } else {
+        sortKey = key;
+        sortDir = -1;
+      }
+      document.querySelectorAll('th[data-sort]').forEach(t => {
+        t.setAttribute('aria-sort', t.dataset.sort === sortKey
+          ? (sortDir === -1 ? 'descending' : 'ascending')
+          : 'none');
+        t.querySelector('.sort-indicator').textContent =
+          t.dataset.sort === sortKey ? (sortDir === -1 ? '▼' : '▲') : '↕';
+      });
+      currentPage = 0;
+      renderTable(sortContracts(filteredContracts), currentPage);
+    });
+  });
+}
+
+// ─── EXPORT CSV ───────────────────────────────────────────────────────────────
+function exportCSV() {
+  const cols = [
+    ['entidad', 'Entidad'], ['objeto', 'Objeto'], ['proveedor', 'Contratista'],
+    ['tipo', 'Tipo'], ['modalidad', 'Modalidad'], ['estado', 'Estado'],
+    ['valor', 'Valor (COP)'], ['valorPagado', 'Valor pagado (COP)'],
+    ['fechaFirma', 'Fecha firma'], ['fechaInicio', 'Fecha inicio'], ['fechaFin', 'Fecha fin'],
+    ['esPyme', 'PyME'], ['ciudad', 'Ciudad'], ['url', 'URL SECOP'],
+  ];
+  const escCsv = v => {
+    const s = String(v ?? '');
+    return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const rows = [
+    cols.map(([, label]) => escCsv(label)).join(';'),
+    ...filteredContracts.map(c =>
+      cols.map(([key]) => escCsv(key === 'esPyme' ? (c.esPyme ? 'Sí' : 'No') : c[key])).join(';')),
+  ];
+  // BOM para que Excel abra el UTF-8 correctamente; ';' como separador (locale es-CO)
+  const blob = new Blob(['﻿' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `contratos-medellin-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 // ─── RENDER TABLE ─────────────────────────────────────────────────────────────
 function renderTable(contracts, page) {
   const start = page * PAGE_SIZE;
@@ -194,7 +425,7 @@ function renderTable(contracts, page) {
   const tbody = document.getElementById('table-body');
 
   if (!slice.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted)">Sin resultados para los filtros seleccionados.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-row">Sin resultados para los filtros seleccionados.</td></tr>';
     document.getElementById('pagination').innerHTML = '';
     return;
   }
@@ -205,7 +436,7 @@ function renderTable(contracts, page) {
       ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" title="${esc(c.objeto)}">› ${esc(c.objeto)}</a>`
       : `<span title="${esc(c.objeto)}">› ${esc(c.objeto)}</span>`;
     const linkHtml = c.url
-      ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">↗ SECOP</a>`
+      ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" aria-label="Ver ficha en SECOP">↗ SECOP</a>`
       : '';
     return `
       <tr>
@@ -232,13 +463,13 @@ function renderPagination(total, page) {
   const start = Math.max(0, page - 2);
   const end   = Math.min(pages, page + 3);
 
-  let html = `<button class="page-btn" onclick="goPage(${page - 1})" ${page === 0 ? 'disabled' : ''}>‹</button>`;
-  if (start > 0) html += `<button class="page-btn" onclick="goPage(0)">1</button><span style="color:var(--text-muted);font-size:12px">…</span>`;
+  let html = `<button class="page-btn" onclick="goPage(${page - 1})" ${page === 0 ? 'disabled' : ''} aria-label="Página anterior">‹</button>`;
+  if (start > 0) html += `<button class="page-btn" onclick="goPage(0)">1</button><span class="page-dots">…</span>`;
   for (let i = start; i < end; i++) {
-    html += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="goPage(${i})">${i + 1}</button>`;
+    html += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="goPage(${i})" ${i === page ? 'aria-current="page"' : ''}>${i + 1}</button>`;
   }
-  if (end < pages) html += `<span style="color:var(--text-muted);font-size:12px">…</span><button class="page-btn" onclick="goPage(${pages - 1})">${pages}</button>`;
-  html += `<button class="page-btn" onclick="goPage(${page + 1})" ${page >= pages - 1 ? 'disabled' : ''}>›</button>`;
+  if (end < pages) html += `<span class="page-dots">…</span><button class="page-btn" onclick="goPage(${pages - 1})">${pages}</button>`;
+  html += `<button class="page-btn" onclick="goPage(${page + 1})" ${page >= pages - 1 ? 'disabled' : ''} aria-label="Página siguiente">›</button>`;
   html += `<span class="page-info">${total.toLocaleString('es-CO')} contratos &middot; p&aacute;g. ${page + 1}/${pages}</span>`;
 
   el.innerHTML = html;
@@ -246,7 +477,7 @@ function renderPagination(total, page) {
 
 window.goPage = function(page) {
   currentPage = page;
-  renderTable(filteredContracts, currentPage);
+  renderTable(sortContracts(filteredContracts), currentPage);
   document.getElementById('contracts-table').scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
@@ -264,12 +495,24 @@ function populateSelect(id, values) {
   }
 }
 
+function renderDerived(contracts) {
+  const stats = computeStats(contracts);
+  const top   = computeTopContratistas(contracts);
+
+  renderKPIs(stats);
+  renderBars('chart-tipo-bars',      stats.porTipo,      '');
+  renderBars('chart-modalidad-bars', stats.porModalidad, 'bar-fill--yellow');
+  renderTopList('top-numero', top.porNumero, t => `${t.count} contratos`);
+  renderTopList('top-valor',  top.porValor,  t => formatCOP(t.valor));
+  renderAlertas(computeAlertas(contracts, top), contracts.length);
+}
+
 function applyFilters() {
-  const entidad  = document.getElementById('filter-entidad').value;
-  const tipo     = document.getElementById('filter-tipo').value;
+  const entidad   = document.getElementById('filter-entidad').value;
+  const tipo      = document.getElementById('filter-tipo').value;
   const modalidad = document.getElementById('filter-modalidad').value;
-  const estado   = document.getElementById('filter-estado').value;
-  const search   = document.getElementById('search-input').value.trim().toLowerCase();
+  const estado    = document.getElementById('filter-estado').value;
+  const search    = document.getElementById('search-input').value.trim().toLowerCase();
 
   filteredContracts = allContracts.filter(c => {
     if (entidad   && c.entidad   !== entidad)   return false;
@@ -279,18 +522,16 @@ function applyFilters() {
     if (search) {
       const hay = c.proveedor.toLowerCase().includes(search) ||
                   c.objeto.toLowerCase().includes(search)    ||
-                  c.entidad.toLowerCase().includes(search);
+                  c.entidad.toLowerCase().includes(search)   ||
+                  c.docProveedor.toLowerCase().includes(search);
       if (!hay) return false;
     }
     return true;
   });
 
   currentPage = 0;
-  const stats = computeStats(filteredContracts);
-  renderKPIs(stats);
-  renderBars('chart-tipo-bars',      stats.porTipo,      '');
-  renderBars('chart-modalidad-bars', stats.porModalidad, 'bar-fill--purple');
-  renderTable(filteredContracts, currentPage);
+  renderDerived(filteredContracts);
+  renderTable(sortContracts(filteredContracts), currentPage);
   document.getElementById('results-count').textContent =
     `${filteredContracts.length.toLocaleString('es-CO')} contratos`;
 }
@@ -317,6 +558,7 @@ function setupFilters() {
     document.getElementById('search-input').value = '';
     applyFilters();
   });
+  document.getElementById('btn-export').addEventListener('click', exportCSV);
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
@@ -325,17 +567,12 @@ async function init() {
     allContracts      = await fetchContracts();
     filteredContracts = [...allContracts];
 
-    const stats = computeStats(allContracts);
-    renderKPIs(stats);
-    renderBars('chart-tipo-bars',      stats.porTipo,      '');
-    renderBars('chart-modalidad-bars', stats.porModalidad, 'bar-fill--purple');
+    renderDerived(allContracts);
     setupFilters();
+    setupSort();
     renderTable(filteredContracts, currentPage);
     document.getElementById('results-count').textContent =
       `${filteredContracts.length.toLocaleString('es-CO')} contratos`;
-
-    const now = new Date().toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' });
-    document.getElementById('last-updated').textContent = `// actualizado ${now}`;
 
   } catch (err) {
     document.getElementById('loading').innerHTML = `

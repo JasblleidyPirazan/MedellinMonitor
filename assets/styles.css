@@ -3,22 +3,42 @@
   --bg-panel: #111111;
   --border: #1e1e1e;
 
-  /* Venseremos */
-  --purple: #7010a6;
-  --purple-light: #9b30d0;
-  --yellow: #fcd700;
+  /* Paleta Venseremos */
+  --purple: #7010A6;
+  --purple-light: #A64DD6;   /* variante clara para texto sobre fondo oscuro */
+  --purple-dim: #3d0a5c;
+  --yellow: #FCD700;
 
-  /* Status */
+  /* Status (semánticos: estado del contrato) */
   --white: #f0f0f0;
   --green: #00dd44;
   --orange: #ff8800;
-  --red: #ff4444;
-  --text-muted: #444;
+  --red: #ff5555;
+
+  /* Texto — contraste mínimo AA sobre --bg */
   --text: #c8c8c8;
-  --text-dim: #666;
+  --text-dim: #8f8f8f;
+  --text-muted: #757575;
 
   --font: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
   --max-w: 1440px;
+}
+
+/* Accesibilidad: foco visible al navegar con teclado */
+:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+
+/* Contenido solo para lectores de pantalla */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -137,6 +157,10 @@ body {
   letter-spacing: -0.02em;
   line-height: 1.1;
 }
+.kpi-value--white  { color: var(--white); }
+.kpi-value--yellow { color: var(--yellow); }
+.kpi-value--green  { color: var(--green); }
+.kpi-value--purple { color: var(--purple-light); }
 
 /* ── Terminal panel ──────────────────────────────────────────────────────── */
 .terminal-panel {
@@ -151,6 +175,13 @@ body {
   color: var(--purple-light);
   margin-bottom: 16px;
 }
+.panel-note {
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  text-transform: none;
+}
+.sin-datos { color: var(--text-muted); font-size: 11px; }
 
 /* ── Charts row ──────────────────────────────────────────────────────────── */
 .charts-row {
@@ -179,8 +210,87 @@ body {
 }
 .bar-count { font-size: 11px; color: var(--yellow); flex-shrink: 0; }
 .bar-track { height: 4px; background: #1a1a1a; border-radius: 2px; }
-.bar-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width 0.4s ease; }
-.bar-fill--purple { background: var(--purple-light); }
+.bar-fill { height: 100%; background: linear-gradient(90deg, var(--purple), var(--purple-light)); border-radius: 2px; transition: width 0.4s ease; }
+.bar-fill--yellow { background: var(--yellow); }
+
+/* ── Top contratistas ────────────────────────────────────────────────────── */
+.top-list { list-style: none; display: flex; flex-direction: column; }
+.top-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid #161616;
+}
+.top-item:last-child { border-bottom: none; }
+.top-rank { font-size: 11px; color: var(--purple-light); flex-shrink: 0; font-weight: 700; }
+.top-name {
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.top-name:hover { color: var(--yellow); text-decoration: underline; }
+.top-metric { font-size: 12px; color: var(--yellow); font-weight: 600; flex-shrink: 0; }
+
+/* ── Alertas de veeduría ─────────────────────────────────────────────────── */
+.alertas-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.alerta-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-muted);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.alerta-card.alerta--baja  { border-left-color: var(--green); }
+.alerta-card.alerta--media { border-left-color: var(--yellow); }
+.alerta-card.alerta--alta  { border-left-color: var(--red); }
+.alerta-valor {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--white);
+  line-height: 1.1;
+}
+.alerta--media .alerta-valor { color: var(--yellow); }
+.alerta--alta  .alerta-valor { color: var(--red); }
+.alerta-titulo {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+.alerta-desc {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  margin-top: 4px;
+}
+.link-contratista {
+  background: none;
+  border: none;
+  color: var(--purple-light);
+  font-family: var(--font);
+  font-size: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link-contratista:hover { color: var(--yellow); }
 
 /* ── Filters ─────────────────────────────────────────────────────────────── */
 .filters-grid {
@@ -210,9 +320,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 .results-count { font-size: 11px; color: var(--text-dim); }
-.btn-reset {
+.filters-actions { display: flex; gap: 8px; }
+.btn-reset,
+.btn-secondary {
   background: none;
   border: 1px solid var(--border);
   color: var(--text-dim);
@@ -223,9 +337,15 @@ body {
   letter-spacing: 0.05em;
 }
 .btn-reset:hover { border-color: var(--red); color: var(--red); }
+.btn-secondary { border-color: var(--purple); color: var(--purple-light); }
+.btn-secondary:hover { background: var(--purple); color: var(--white); }
 
 /* ── Table ───────────────────────────────────────────────────────────────── */
-.table-wrapper { overflow-x: auto; margin-bottom: 16px; }
+.table-wrapper {
+  overflow: auto;
+  max-height: 72vh;   /* el encabezado queda fijo al hacer scroll */
+  margin-bottom: 16px;
+}
 .contracts-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .contracts-table th {
   text-align: left;
@@ -235,7 +355,17 @@ body {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+  z-index: 5;
 }
+.th-sortable { cursor: pointer; user-select: none; }
+.th-sortable:hover { color: var(--yellow); }
+.th-sortable[aria-sort="ascending"],
+.th-sortable[aria-sort="descending"] { color: var(--yellow); }
+.sort-indicator { font-size: 9px; margin-left: 2px; }
+.empty-row { text-align: center; padding: 32px; color: var(--text-muted); }
 .contracts-table td {
   padding: 10px 12px;
   border-bottom: 1px solid #0f0f0f;
@@ -288,6 +418,7 @@ body {
 .page-btn.active { border-color: var(--purple); color: var(--purple-light); font-weight: 700; }
 .page-btn:disabled { opacity: 0.25; cursor: default; pointer-events: none; }
 .page-info { font-size: 11px; color: var(--text-dim); margin-left: 8px; }
+.page-dots { color: var(--text-muted); font-size: 12px; }
 
 /* ── Footer ──────────────────────────────────────────────────────────────── */
 .site-footer { border-top: 1px solid var(--border); padding: 24px; margin-top: 16px; }
@@ -319,9 +450,15 @@ body {
   .filters-grid { grid-template-columns: repeat(2, 1fr); }
   .filter-group--wide { grid-column: 1 / -1; }
 }
+@media (max-width: 1100px) {
+  .alertas-grid { grid-template-columns: repeat(2, 1fr); }
+}
 @media (max-width: 900px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .charts-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .alertas-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
   .main-content { padding: 12px 12px 32px; }
