@@ -15,9 +15,10 @@ Dashboard estático de veeduría ciudadana sobre la contratación pública de Me
 
 ## Arquitectura en una línea por archivo
 
-- `index.html` — única página; estructura del dashboard (KPIs, gráficos, filtros, tabla).
-- `assets/app.js` — toda la lógica: cascada de carga (snapshot local → sessionStorage 30 min → API en vivo con `$limit=5000`), normalización, stats, filtros, render.
-- `assets/styles.css` — tema oscuro "terminal", variables CSS con la paleta Venseremos (`--purple`, `--yellow`).
+- `index.html` — página principal; estructura del dashboard (KPIs, alertas, tops, filtros, tabla).
+- `graficos.html` + `assets/graficos.js` — página de gráficos claves (serie mensual, modalidad, tipo, top entidades/contratistas); consume `data/resumen.json`; SVG/HTML puro, sin librerías.
+- `assets/app.js` — lógica del dashboard: cascada de carga (snapshot local → sessionStorage 30 min → API en vivo con `$limit=5000`), normalización, stats, filtros, render. Los contratistas se agregan **por NIT** (`documento_proveedor`) porque un mismo contratista aparece con varias grafías del nombre.
+- `assets/styles.css` — tema claro (fondo blanco), paleta Venseremos: morado `#7010A6` como acento, amarillo `#FCD700` solo en fondos (no supera contraste como texto sobre blanco; para texto/datos "amarillos" se usa el dorado `--gold #9A7B00`, validado junto al morado para daltonismo).
 - `fetch_data.py` — descarga paginada completa y genera DOS archivos: `data/resumen.json` (estadísticas globales pre-agregadas del dataset completo, >100k contratos) y `data/contratos.json` (solo los 10.000 más recientes, compacto — el dataset completo pesa >100 MB y GitHub lo rechaza).
 - `.github/workflows/update_data.yml` — actualiza el snapshot cada lunes 8:00 UTC vía auto-commit.
 

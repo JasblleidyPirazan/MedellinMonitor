@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gráficos claves — Monitor de Contratación Medellín</title>
+  <meta name="description" content="Gráficos claves de la contratación pública de Medellín 2024–2027: evolución mensual, modalidades, entidades y contratistas.">
+  <meta name="theme-color" content="#7010A6">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+  <!-- Loading overlay -->
+  <div id="loading" class="loading-overlay" role="status" aria-live="polite">
+    <div class="loading-inner">
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="loading-text">Cargando estadísticas…</p>
+      <p id="loading-sub" class="loading-sub"></p>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">⬡</div>
+        <div class="brand-text">
+          <h1><a href="index.html">MONITOR DE CONTRATACIÓN</a> · GRÁFICOS CLAVES</h1>
+          <span class="brand-sub">Medellín · Gobierno Fico 2024–2027 · Veeduría ciudadana por <strong>Venseremos</strong></span>
+        </div>
+      </div>
+      <div class="header-right">
+        <a class="nav-link" href="index.html">← TABLERO Y CONTRATOS</a>
+        <span class="update-badge" id="last-updated">// cargando…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+
+    <!-- Cifras hero -->
+    <section class="hero-tiles" aria-label="Cifras principales" id="hero-tiles"></section>
+
+    <!-- Serie mensual -->
+    <section class="charts-row">
+      <div class="terminal-panel">
+        <div class="panel-title">▶ CONTRATOS FIRMADOS POR MES</div>
+        <div class="chart-svg-wrap" id="chart-mes-contratos"></div>
+        <p class="chart-note">Número de contratos por mes de firma, desde enero de 2024. Pasa el cursor sobre una barra para ver el detalle.</p>
+      </div>
+      <div class="terminal-panel">
+        <div class="panel-title">▶ VALOR CONTRATADO POR MES (COP)</div>
+        <div class="chart-svg-wrap" id="chart-mes-valor"></div>
+        <p class="chart-note">Suma del valor de los contratos firmados cada mes. Un pico aislado suele corresponder a uno o pocos contratos muy grandes.</p>
+      </div>
+    </section>
+
+    <!-- Modalidad y tipo -->
+    <section class="charts-row">
+      <div class="terminal-panel">
+        <div class="panel-title">▶ VALOR POR MODALIDAD DE CONTRATACIÓN</div>
+        <div id="chart-modalidad"></div>
+        <p class="chart-note">La licitación pública es la regla general; la contratación directa es un mecanismo excepcional (Ley 1150 de 2007, art. 2).</p>
+      </div>
+      <div class="terminal-panel">
+        <div class="panel-title">▶ CONTRATOS POR TIPO</div>
+        <div id="chart-tipo"></div>
+      </div>
+    </section>
+
+    <!-- Entidades y contratistas -->
+    <section class="charts-row">
+      <div class="terminal-panel">
+        <div class="panel-title">▶ TOP 10 ENTIDADES POR VALOR CONTRATADO</div>
+        <div id="chart-entidades"></div>
+      </div>
+      <div class="terminal-panel">
+        <div class="panel-title">▶ TOP 10 CONTRATISTAS POR VALOR (AGRUPADOS POR NIT)</div>
+        <div id="chart-contratistas"></div>
+        <p class="chart-note">Un mismo contratista puede aparecer en SECOP con varias grafías del nombre; aquí se agrupan por NIT.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <span class="footer-label">Fuente:</span>
+        <a href="https://www.datos.gov.co/resource/jbjy-vk9h" target="_blank" rel="noopener">SECOP II Contratos Electrónicos — datos.gov.co</a>
+        · API SODA · Colombia Compra Eficiente · MinTIC
+      </div>
+      <div>
+        <span class="footer-label">Producido por:</span>
+        <a href="https://venseremos.co" target="_blank" rel="noopener">venseremos.co</a>
+        · Los datos son públicos. El control es ciudadano.
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/graficos.js"></script>
+</body>
+</html>

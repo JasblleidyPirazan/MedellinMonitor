@@ -32,6 +32,7 @@
         </div>
       </div>
       <div class="header-right">
+        <a class="nav-link" href="graficos.html">📊 GRÁFICOS CLAVES</a>
         <span class="update-badge" id="last-updated">// cargando…</span>
       </div>
     </div>
@@ -110,15 +111,15 @@
           <select id="filter-estado" class="filter-select"><option value="">Todos</option></select>
         </div>
         <div class="filter-group filter-group--wide">
-          <label class="filter-label" for="search-input">BUSCAR CONTRATISTA / NIT / OBJETO</label>
-          <input type="text" id="search-input" class="filter-input" placeholder="Nombre, NIT o palabras del objeto del contrato…">
+          <label class="filter-label" for="search-input">BUSCAR POR PALABRAS CLAVE</label>
+          <input type="text" id="search-input" class="filter-input" placeholder="Palabras clave: contratista, NIT, objeto o entidad (ej.: alimentación escolar)">
         </div>
       </div>
       <div class="filters-footer">
         <span class="results-count" id="results-count" aria-live="polite">— contratos</span>
         <div class="filters-actions">
           <button class="btn-secondary" id="btn-export" title="Descargar los contratos filtrados en CSV">⬇ Exportar CSV</button>
-          <button class="btn-reset" id="btn-reset">✕ Limpiar filtros</button>
+          <button class="btn-reset" id="btn-reset" title="Restablecer todos los filtros y la búsqueda">✕ Quitar todos los filtros</button>
         </div>
       </div>
     </section>

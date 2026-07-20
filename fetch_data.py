@@ -159,44 +159,75 @@ def build_resumen(contracts: list) -> dict:
                   if 'activo' in c['estado'].lower() or 'ejecuci' in c['estado'].lower())
     pymes = sum(1 for c in contracts if c['esPyme'])
 
-    por_tipo, por_modalidad = {}, {}
-    proveedores = {}          # nombre → [count, valor]
-    frac = {}                 # nombre → nº contratos directa/mínima
+    por_tipo, por_modalidad = {}, {}      # etiqueta → [count, valor]
+    entidades = {}                        # entidad → [count, valor]
+    proveedores = {}                      # clave NIT → {'nit','name','count','valor','frac'}
+    meses = {}                            # 'YYYY-MM' → [count, valor]
     directa_count = directa_valor = 0
     diciembre = 0
 
     for c in contracts:
-        por_tipo[c['tipo']] = por_tipo.get(c['tipo'], 0) + 1
-        por_modalidad[c['modalidad']] = por_modalidad.get(c['modalidad'], 0) + 1
+        e = por_tipo.setdefault(c['tipo'], [0, 0.0])
+        e[0] += 1; e[1] += c['valor']
+        e = por_modalidad.setdefault(c['modalidad'], [0, 0.0])
+        e[0] += 1; e[1] += c['valor']
+        e = entidades.setdefault(c['entidad'], [0, 0.0])
+        e[0] += 1; e[1] += c['valor']
 
-        if RE_DIRECTA.search(c['modalidad']):
+        es_directa = bool(RE_DIRECTA.search(c['modalidad']))
+        if es_directa:
             directa_count += 1
             directa_valor += c['valor']
 
+        mes = c['fechaFirma'][:7]
+        if len(mes) == 7:
+            e = meses.setdefault(mes, [0, 0.0])
+            e[0] += 1; e[1] += c['valor']
         if c['fechaFirma'][5:7] == '12':
             diciembre += 1
 
-        if proveedor_valido(c['proveedor']):
-            e = proveedores.setdefault(c['proveedor'], [0, 0.0])
-            e[0] += 1
-            e[1] += c['valor']
-            if RE_DIRECTA.search(c['modalidad']) or RE_MINIMA.search(c['modalidad']):
-                frac[c['proveedor']] = frac.get(c['proveedor'], 0) + 1
+        # Agregación por NIT: el mismo contratista aparece con varias grafías
+        # del nombre (p. ej. «ITM» / «INSTITUCIÓN UNIVERSITARIA ITM»); el
+        # documento_proveedor los unifica. Sin NIT válido, el nombre es la clave.
+        nit = (c.get('docProveedor') or '').strip()
+        key = nit if nit and not PROVEEDOR_INVALIDO.match(nit) else None
+        if key is None and proveedor_valido(c['proveedor']):
+            key = f'nombre:{c["proveedor"]}'
+            nit = ''
+        if key is not None:
+            p = proveedores.setdefault(key, {'nit': nit, 'name': c['proveedor'],
+                                             'count': 0, 'valor': 0.0, 'frac': 0})
+            p['count'] += 1
+            p['valor'] += c['valor']
+            # nombre más descriptivo (el más largo visto para ese NIT)
+            if len(c['proveedor']) > len(p['name']):
+                p['name'] = c['proveedor']
+            if es_directa or RE_MINIMA.search(c['modalidad']):
+                p['frac'] += 1
 
-    tops = [{'name': n, 'count': e[0], 'valor': e[1]} for n, e in proveedores.items()]
+    tops = [{'nit': p['nit'], 'name': p['name'], 'count': p['count'], 'valor': p['valor']}
+            for p in proveedores.values()]
     top_numero = sorted(tops, key=lambda t: -t['count'])[:10]
     top_valor  = sorted(tops, key=lambda t: -t['valor'])[:10]
     top10_valor = sum(t['valor'] for t in top_valor)
-    fraccionamiento = sorted(((n, v) for n, v in frac.items() if v >= 5),
-                             key=lambda x: -x[1])[:10]
+    fraccionamiento = sorted(
+        ({'nit': p['nit'], 'name': p['name'], 'count': p['frac']}
+         for p in proveedores.values() if p['frac'] >= 5),
+        key=lambda x: -x['count'])[:10]
+
+    triples = lambda d: sorted(([k, v[0], v[1]] for k, v in d.items()), key=lambda x: -x[1])
 
     return {
         'total':        len(contracts),
         'valorTotal':   valor_total,
         'activos':      activos,
         'pymes':        pymes,
-        'porTipo':      sorted(por_tipo.items(), key=lambda x: -x[1]),
-        'porModalidad': sorted(por_modalidad.items(), key=lambda x: -x[1]),
+        'porTipo':      triples(por_tipo),
+        'porModalidad': triples(por_modalidad),
+        'topEntidades': sorted(([k, v[0], v[1]] for k, v in entidades.items()),
+                               key=lambda x: -x[2])[:10],
+        'serieMensual': sorted(([m, v[0], v[1]] for m, v in meses.items()
+                                if m >= '2024-01'), key=lambda x: x[0]),
         'topNumero':    top_numero,
         'topValor':     top_valor,
         'alertas': {
