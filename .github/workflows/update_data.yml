@@ -4,6 +4,13 @@ on:
   schedule:
     - cron: '0 8 * * 1'   # Cada lunes a las 8am UTC (3am Medellín)
   workflow_dispatch:        # Ejecución manual desde GitHub Actions
+  push:                     # Refrescar datos cuando cambia el fetcher o este workflow
+    branches:
+      - main
+      - claude/secop-api-integration-BNmsk
+    paths:
+      - fetch_data.py
+      - .github/workflows/update_data.yml
 
 # Sin este permiso el token del workflow no puede hacer push del commit
 # automático y la actualización falla silenciosamente.
