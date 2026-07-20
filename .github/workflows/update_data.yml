@@ -41,5 +41,5 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: 'data: actualizar contratos SECOP Medellín [skip ci]'
-          file_pattern: 'data/contratos.json'
+          file_pattern: 'data/*.json'
           commit_author: 'github-actions[bot] <github-actions[bot]@users.noreply.github.com>'

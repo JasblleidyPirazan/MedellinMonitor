@@ -19,6 +19,11 @@ let filteredContracts = [];
 let currentPage       = 0;
 let sortKey           = null;  // 'valor' | 'fechaFirma' | null (orden de la API)
 let sortDir           = -1;    // -1 desc, 1 asc
+// Resumen pre-agregado sobre el dataset COMPLETO (data/resumen.json).
+// El snapshot de contratos solo trae los más recientes; con el resumen los
+// KPIs, tops y alertas reflejan el total real cuando no hay filtros activos.
+let globalResumen     = null;
+let totalGlobal       = 0;
 
 // ─── NORMALIZE ────────────────────────────────────────────────────────────────
 // Field names verificados contra SECOP II (jbjy-vk9h)
@@ -120,12 +125,19 @@ function setUpdatedBadge(isoDate) {
 
 // ─── FETCH ────────────────────────────────────────────────────────────────────
 async function fetchContracts() {
-  // 1) Intentar archivo estático pre-generado (más rápido, dataset completo)
+  // 0) Resumen global pre-agregado (opcional, generado por fetch_data.py)
+  try {
+    const res = await fetch('data/resumen.json');
+    if (res.ok) globalResumen = await res.json();
+  } catch { /* sin resumen → los paneles se calculan sobre lo cargado */ }
+
+  // 1) Intentar archivo estático pre-generado (instantáneo)
   try {
     const res = await fetch('data/contratos.json');
     if (res.ok) {
       const payload = await res.json();
       if (payload.contracts && payload.contracts.length > 0) {
+        totalGlobal = payload.totalGlobal ?? payload.contracts.length;
         setLoading(`Cargando ${payload.contracts.length.toLocaleString('es-CO')} contratos desde archivo local…`, '');
         setUpdatedBadge(payload.updated);
         return payload.contracts;
@@ -248,7 +260,14 @@ function computeAlertas(contracts, top) {
     .filter(([, n]) => n >= 5)
     .sort((a, b) => b[1] - a[1]);
 
-  return { valorTotal, directa, directaValor, top10Valor, diciembre, fraccionamiento };
+  return {
+    valorTotal,
+    directaCount:   directa.length,
+    directaValor,
+    top10Valor,
+    diciembreCount: diciembre.length,
+    fraccionamiento,
+  };
 }
 
 function nivelAlerta(pct, medio, alto) {
@@ -263,7 +282,7 @@ function renderAlertas(a, totalContratos) {
 
   const pctDirectaValor = a.valorTotal ? a.directaValor / a.valorTotal * 100 : 0;
   const pctTop10        = a.valorTotal ? a.top10Valor / a.valorTotal * 100 : 0;
-  const pctDiciembre    = a.diciembre.length / totalContratos * 100;
+  const pctDiciembre    = a.diciembreCount / totalContratos * 100;
 
   const topFrac = a.fraccionamiento.slice(0, 3)
     .map(([name, n]) => `<button class="link-contratista" data-proveedor="${esc(name)}">${esc(name)} (${n})</button>`)
@@ -273,7 +292,7 @@ function renderAlertas(a, totalContratos) {
     <div class="alerta-card ${nivelAlerta(pctDirectaValor, 30, 50)}">
       <span class="alerta-valor">${formatPct(a.directaValor, a.valorTotal)}</span>
       <span class="alerta-titulo">del dinero por contratación directa</span>
-      <p class="alerta-desc">${a.directa.length.toLocaleString('es-CO')} contratos (${formatCOP(a.directaValor)}).
+      <p class="alerta-desc">${a.directaCount.toLocaleString('es-CO')} contratos (${formatCOP(a.directaValor)}).
       La contratación directa es un mecanismo excepcional — la regla general es la licitación pública
       (Ley 1150 de 2007, art. 2).</p>
     </div>
@@ -285,9 +304,9 @@ function renderAlertas(a, totalContratos) {
       contratación estatal (Ley 80 de 1993).</p>
     </div>
     <div class="alerta-card ${nivelAlerta(pctDiciembre, 15, 25)}">
-      <span class="alerta-valor">${a.diciembre.length.toLocaleString('es-CO')}</span>
+      <span class="alerta-valor">${a.diciembreCount.toLocaleString('es-CO')}</span>
       <span class="alerta-titulo">contratos firmados en diciembre</span>
-      <p class="alerta-desc">${formatPct(a.diciembre.length, totalContratos)} del total.
+      <p class="alerta-desc">${formatPct(a.diciembreCount, totalContratos)} del total.
       Concentración de firmas al cierre de vigencia puede señalar ejecución afanada del
       presupuesto (principio de planeación).</p>
     </div>
@@ -495,7 +514,33 @@ function populateSelect(id, values) {
   }
 }
 
+function filtersActive() {
+  return ['filter-entidad', 'filter-tipo', 'filter-modalidad', 'filter-estado']
+    .some(id => document.getElementById(id).value) ||
+    document.getElementById('search-input').value.trim() !== '';
+}
+
 function renderDerived(contracts) {
+  // Sin filtros y con resumen global disponible → los paneles reflejan el
+  // dataset COMPLETO, no solo el subconjunto cargado para la tabla.
+  if (globalResumen && !filtersActive()) {
+    renderKPIs({
+      total:      globalResumen.total,
+      valorTotal: globalResumen.valorTotal,
+      activos:    globalResumen.activos,
+      pymes:      globalResumen.pymes,
+    });
+    renderBars('chart-tipo-bars',      globalResumen.porTipo,      '');
+    renderBars('chart-modalidad-bars', globalResumen.porModalidad, 'bar-fill--yellow');
+    renderTopList('top-numero', globalResumen.topNumero, t => `${t.count} contratos`);
+    renderTopList('top-valor',  globalResumen.topValor,  t => formatCOP(t.valor));
+    renderAlertas(
+      { valorTotal: globalResumen.valorTotal, ...globalResumen.alertas },
+      globalResumen.total,
+    );
+    return;
+  }
+
   const stats = computeStats(contracts);
   const top   = computeTopContratistas(contracts);
 
@@ -532,8 +577,19 @@ function applyFilters() {
   currentPage = 0;
   renderDerived(filteredContracts);
   renderTable(sortContracts(filteredContracts), currentPage);
-  document.getElementById('results-count').textContent =
-    `${filteredContracts.length.toLocaleString('es-CO')} contratos`;
+  updateResultsCount();
+}
+
+function updateResultsCount() {
+  const el = document.getElementById('results-count');
+  const n  = filteredContracts.length.toLocaleString('es-CO');
+  if (totalGlobal > allContracts.length) {
+    el.textContent = filtersActive()
+      ? `${n} contratos (buscando entre los ${allContracts.length.toLocaleString('es-CO')} más recientes de ${totalGlobal.toLocaleString('es-CO')})`
+      : `${n} contratos más recientes de ${totalGlobal.toLocaleString('es-CO')} en total`;
+  } else {
+    el.textContent = `${n} contratos`;
+  }
 }
 
 function setupFilters() {
@@ -571,8 +627,7 @@ async function init() {
     setupFilters();
     setupSort();
     renderTable(filteredContracts, currentPage);
-    document.getElementById('results-count').textContent =
-      `${filteredContracts.length.toLocaleString('es-CO')} contratos`;
+    updateResultsCount();
 
   } catch (err) {
     document.getElementById('loading').innerHTML = `

@@ -70,7 +70,18 @@ Por eso el filtro usa `upper(ciudad) LIKE '%MEDELL%'` en lugar de una igualdad e
 
 ## 4. Flujo de datos
 
-El frontend (`assets/app.js`) intenta cargar los contratos en **tres niveles, en orden de prioridad**:
+### Dos archivos de datos (importante)
+
+El dataset completo de Medellín supera los **100.000 contratos**: un solo JSON pesa >100 MB, que GitHub rechaza (límite de 100 MB por archivo) y ningún navegador debería descargar. Por eso `fetch_data.py` genera **dos archivos**:
+
+- **`data/resumen.json`** (~KB): KPIs, distribuciones, top contratistas y alertas **pre-agregados sobre el dataset completo**. Cuando no hay filtros activos, los paneles del dashboard muestran estas cifras globales exactas.
+- **`data/contratos.json`** (~MB): los **10.000 contratos más recientes** en JSON compacto (objeto truncado a 240 caracteres), para la tabla navegable, los filtros y la exportación CSV. Incluye `totalGlobal` para que la UI indique "N más recientes de M en total".
+
+Al aplicar un filtro o búsqueda, los paneles se recalculan sobre el subconjunto cargado (el contador de resultados lo aclara). La función `build_resumen()` de `fetch_data.py` replica la semántica de `computeStats`/`computeTopContratistas`/`computeAlertas` de `app.js` — mantener sincronizadas.
+
+### Cascada de carga
+
+El frontend (`assets/app.js`) intenta cargar los contratos en **tres niveles, en orden de prioridad** (y además intenta `data/resumen.json` para las cifras globales):
 
 ```
 ┌─────────────────────────────┐

@@ -20,6 +20,7 @@ Para automatización semanal, ver .github/workflows/update_data.yml
 
 import json
 import os
+import re
 import time
 import sys
 from datetime import datetime, timezone
@@ -36,7 +37,16 @@ SECOP_URL    = 'https://www.datos.gov.co/resource/jbjy-vk9h.json'
 FECHA_INICIO = '2024-01-01T00:00:00.000'   # gobierno Fico
 BATCH_SIZE   = 5000
 MAX_RETRIES  = 4
-OUTPUT_FILE  = Path(__file__).parent / 'data' / 'contratos.json'
+DATA_DIR     = Path(__file__).parent / 'data'
+OUTPUT_FILE  = DATA_DIR / 'contratos.json'   # subconjunto reciente para la tabla
+RESUMEN_FILE = DATA_DIR / 'resumen.json'     # agregados sobre el dataset COMPLETO
+
+# El dataset completo de Medellín supera los 100.000 contratos (>100 MB en
+# JSON — GitHub rechaza archivos así y el navegador no podría cargarlos).
+# Estrategia: resumen.json lleva las estadísticas globales pre-agregadas;
+# contratos.json lleva solo los más recientes para la tabla navegable.
+RECENT_LIMIT = 10_000
+OBJETO_MAX   = 240   # truncar objetos larguísimos en el subconjunto
 
 # Medellín aparece en SECOP II con varios nombres según cómo registró la
 # entidad su ubicación: "Medellín", "Medellin" (sin tilde) y, tras el cambio
@@ -133,6 +143,71 @@ def dedupe(contracts: list) -> list:
         unique.append(c)
     return unique
 
+# ─── RESUMEN GLOBAL ──────────────────────────────────────────────────────────
+# Misma semántica que computeStats/computeTopContratistas/computeAlertas en
+# assets/app.js — mantener sincronizados.
+PROVEEDOR_INVALIDO = re.compile(r'^(—|-|n/?a|no definido|no adjudicado|no aplica)$', re.I)
+RE_DIRECTA         = re.compile(r'directa', re.I)
+RE_MINIMA          = re.compile(r'm[ií]nima cuant', re.I)
+
+def proveedor_valido(nombre: str) -> bool:
+    return bool(nombre) and not PROVEEDOR_INVALIDO.match(nombre.strip())
+
+def build_resumen(contracts: list) -> dict:
+    valor_total = sum(c['valor'] for c in contracts)
+    activos = sum(1 for c in contracts
+                  if 'activo' in c['estado'].lower() or 'ejecuci' in c['estado'].lower())
+    pymes = sum(1 for c in contracts if c['esPyme'])
+
+    por_tipo, por_modalidad = {}, {}
+    proveedores = {}          # nombre → [count, valor]
+    frac = {}                 # nombre → nº contratos directa/mínima
+    directa_count = directa_valor = 0
+    diciembre = 0
+
+    for c in contracts:
+        por_tipo[c['tipo']] = por_tipo.get(c['tipo'], 0) + 1
+        por_modalidad[c['modalidad']] = por_modalidad.get(c['modalidad'], 0) + 1
+
+        if RE_DIRECTA.search(c['modalidad']):
+            directa_count += 1
+            directa_valor += c['valor']
+
+        if c['fechaFirma'][5:7] == '12':
+            diciembre += 1
+
+        if proveedor_valido(c['proveedor']):
+            e = proveedores.setdefault(c['proveedor'], [0, 0.0])
+            e[0] += 1
+            e[1] += c['valor']
+            if RE_DIRECTA.search(c['modalidad']) or RE_MINIMA.search(c['modalidad']):
+                frac[c['proveedor']] = frac.get(c['proveedor'], 0) + 1
+
+    tops = [{'name': n, 'count': e[0], 'valor': e[1]} for n, e in proveedores.items()]
+    top_numero = sorted(tops, key=lambda t: -t['count'])[:10]
+    top_valor  = sorted(tops, key=lambda t: -t['valor'])[:10]
+    top10_valor = sum(t['valor'] for t in top_valor)
+    fraccionamiento = sorted(((n, v) for n, v in frac.items() if v >= 5),
+                             key=lambda x: -x[1])[:10]
+
+    return {
+        'total':        len(contracts),
+        'valorTotal':   valor_total,
+        'activos':      activos,
+        'pymes':        pymes,
+        'porTipo':      sorted(por_tipo.items(), key=lambda x: -x[1]),
+        'porModalidad': sorted(por_modalidad.items(), key=lambda x: -x[1]),
+        'topNumero':    top_numero,
+        'topValor':     top_valor,
+        'alertas': {
+            'directaCount':    directa_count,
+            'directaValor':    directa_valor,
+            'top10Valor':      top10_valor,
+            'diciembreCount':  diciembre,
+            'fraccionamiento': fraccionamiento,
+        },
+    }
+
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 def main():
     print(f'Descargando contratos de Medellín (todas las variantes del nombre) desde {FECHA_INICIO[:10]}')
@@ -152,22 +227,42 @@ def main():
     ciudades = sorted({c['ciudad'] for c in contracts})
     print(f'Variantes de ciudad encontradas: {ciudades}')
 
-    payload = {
-        'updated':   datetime.now(timezone.utc).isoformat(),
-        'total':     len(contracts),
-        'ciudad':    'Medellín',
-        'ciudades':  ciudades,
-        'contracts': contracts,
-    }
+    updated = datetime.now(timezone.utc).isoformat()
 
-    OUTPUT_FILE.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
+    # 1) Resumen global: estadísticas sobre el dataset COMPLETO (archivo pequeño)
+    print(f'Agregando estadísticas globales de {len(contracts):,} contratos…')
+    resumen = build_resumen(contracts)
+    resumen.update({'updated': updated, 'ciudad': 'Medellín', 'ciudades': ciudades})
+    RESUMEN_FILE.write_text(
+        json.dumps(resumen, ensure_ascii=False, separators=(',', ':')),
         encoding='utf-8',
     )
-    size_kb = OUTPUT_FILE.stat().st_size / 1024
-    print(f'✓ {OUTPUT_FILE}  ({size_kb:,.0f} KB, {len(contracts):,} contratos)')
+    print(f'✓ {RESUMEN_FILE}  ({RESUMEN_FILE.stat().st_size / 1024:,.0f} KB)')
+
+    # 2) Subconjunto reciente para la tabla (JSON compacto, objeto truncado).
+    #    El dataset completo pesa >100 MB — inviable en git y en el navegador.
+    contracts.sort(key=lambda c: c['fechaFirma'], reverse=True)
+    recent = contracts[:RECENT_LIMIT]
+    for c in recent:
+        if len(c['objeto']) > OBJETO_MAX:
+            c['objeto'] = c['objeto'][:OBJETO_MAX - 1] + '…'
+
+    payload = {
+        'updated':     updated,
+        'total':       len(recent),
+        'totalGlobal': len(contracts),
+        'ciudad':      'Medellín',
+        'ciudades':    ciudades,
+        'contracts':   recent,
+    }
+    OUTPUT_FILE.write_text(
+        json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+        encoding='utf-8',
+    )
+    size_mb = OUTPUT_FILE.stat().st_size / 1024 / 1024
+    print(f'✓ {OUTPUT_FILE}  ({size_mb:,.1f} MB, {len(recent):,} de {len(contracts):,} contratos)')
     print()
-    print('Próximo paso: sube data/contratos.json junto con index.html y assets/ al cPanel.')
+    print('Próximo paso: sube data/*.json junto con index.html y assets/ al cPanel.')
 
 if __name__ == '__main__':
     main()

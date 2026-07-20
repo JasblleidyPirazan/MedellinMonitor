@@ -18,7 +18,7 @@ Dashboard estático de veeduría ciudadana sobre la contratación pública de Me
 - `index.html` — única página; estructura del dashboard (KPIs, gráficos, filtros, tabla).
 - `assets/app.js` — toda la lógica: cascada de carga (snapshot local → sessionStorage 30 min → API en vivo con `$limit=5000`), normalización, stats, filtros, render.
 - `assets/styles.css` — tema oscuro "terminal", variables CSS con la paleta Venseremos (`--purple`, `--yellow`).
-- `fetch_data.py` — descarga paginada completa del dataset y genera `data/contratos.json` normalizado.
+- `fetch_data.py` — descarga paginada completa y genera DOS archivos: `data/resumen.json` (estadísticas globales pre-agregadas del dataset completo, >100k contratos) y `data/contratos.json` (solo los 10.000 más recientes, compacto — el dataset completo pesa >100 MB y GitHub lo rechaza).
 - `.github/workflows/update_data.yml` — actualiza el snapshot cada lunes 8:00 UTC vía auto-commit.
 
 ## Reglas importantes
