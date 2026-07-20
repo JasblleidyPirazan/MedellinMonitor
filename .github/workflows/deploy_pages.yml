@@ -1,0 +1,45 @@
+name: Desplegar en GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - claude/secop-api-integration-BNmsk   # rama principal actual del repo
+  # Redespliega cuando termina la actualización semanal de datos
+  # (los push del bot no disparan workflows por sí solos)
+  workflow_run:
+    workflows: ['Actualizar datos SECOP']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true   # crea el sitio de Pages si aún no existe
+
+      - name: Empaquetar sitio estático
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Desplegar
+        id: deployment
+        uses: actions/deploy-pages@v4

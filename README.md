@@ -67,8 +67,8 @@ El sitio es estático, así que Netlify no necesita build. Hay dos formas:
    - **Publish directory**: `.`
 4. **Deploy site**. Cada push a la rama publicará una nueva versión.
 
-> Para previsualizar esta rama de trabajo, en Netlify selecciona la rama
-> `claude/eager-wright-3brmeu` o usa los *Deploy Previews* de las PR.
+> Netlify publica la rama que configures como producción; usa los
+> *Deploy Previews* de las PR para previsualizar ramas de trabajo.
 
 ### Opción 2 — Arrastrar y soltar (deploy manual rápido)
 
