@@ -52,6 +52,9 @@ function normalize(raw) {
     // SECOP II usa "proveedor_adjudicado", no "nombre_del_contratista_proveedor"
     proveedor:     raw.proveedor_adjudicado ?? '—',
     docProveedor:  raw.documento_proveedor ?? '',
+    // NIT de la entidad contratante: permite analizar a una entidad en sus
+    // dos roles (lo que recibe como contratista y lo que contrata a terceros)
+    nitEntidad:    raw.nit_entidad ?? '',
     esPyme:        raw.es_pyme === 'Sí' || raw.es_pyme === 'Si' || raw.es_pyme === '1',
     // Nota: el campo tiene tilde en el nombre → 'duraci_n_del_contrato' en la API
     duracion:      raw['duración_del_contrato'] ?? raw['duraci_n_del_contrato'] ?? '—',
@@ -450,30 +453,92 @@ function setupSort() {
 }
 
 // ─── EXPORT CSV ───────────────────────────────────────────────────────────────
-function exportCSV() {
-  const cols = [
-    ['entidad', 'Entidad'], ['objeto', 'Objeto'], ['proveedor', 'Contratista'],
-    ['tipo', 'Tipo'], ['modalidad', 'Modalidad'], ['estado', 'Estado'],
-    ['valor', 'Valor (COP)'], ['valorPagado', 'Valor pagado (COP)'],
-    ['fechaFirma', 'Fecha firma'], ['fechaInicio', 'Fecha inicio'], ['fechaFin', 'Fecha fin'],
-    ['esPyme', 'PyME'], ['ciudad', 'Ciudad'], ['url', 'URL SECOP'],
-  ];
+const CSV_COLS = [
+  ['id', 'ID contrato'],
+  ['entidad', 'Entidad'], ['nitEntidad', 'NIT entidad'],
+  ['proveedor', 'Contratista'], ['docProveedor', 'NIT/doc contratista'],
+  ['objeto', 'Objeto'], ['sector', 'Sector'],
+  ['tipo', 'Tipo'], ['modalidad', 'Modalidad'], ['estado', 'Estado'],
+  ['valor', 'Valor (COP)'], ['valorPagado', 'Valor pagado (COP)'],
+  ['valorPendiente', 'Valor pendiente (COP)'],
+  ['fechaFirma', 'Fecha firma'], ['fechaInicio', 'Fecha inicio'], ['fechaFin', 'Fecha fin'],
+  ['duracion', 'Duración'], ['esPyme', 'PyME'], ['ciudad', 'Ciudad'], ['url', 'URL SECOP'],
+];
+
+function buildCSV(contracts) {
   const escCsv = v => {
     const s = String(v ?? '');
     return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const rows = [
-    cols.map(([, label]) => escCsv(label)).join(';'),
-    ...filteredContracts.map(c =>
-      cols.map(([key]) => escCsv(key === 'esPyme' ? (c.esPyme ? 'Sí' : 'No') : c[key])).join(';')),
+    CSV_COLS.map(([, label]) => escCsv(label)).join(';'),
+    ...contracts.map(c =>
+      CSV_COLS.map(([key]) => escCsv(key === 'esPyme' ? (c.esPyme ? 'Sí' : 'No') : c[key])).join(';')),
   ];
   // BOM para que Excel abra el UTF-8 correctamente; ';' como separador (locale es-CO)
-  const blob = new Blob(['﻿' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  return new Blob(['﻿' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+}
+
+function descargarBlob(blob, nombre) {
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
-  a.download = `contratos-medellin-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = nombre;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+function exportCSV() {
+  descargarBlob(buildCSV(filteredContracts),
+    `contratos-medellin-filtrados-${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+// ─── DESCARGA DE LA BASE COMPLETA ────────────────────────────────────────────
+// Pagina la API SODA en el navegador y arma un CSV con TODO el dataset
+// (~120.000 contratos). Así la base completa nunca vive en el repo (>100 MB,
+// GitHub la rechaza) pero siempre está a un clic, fresca desde la fuente.
+async function descargarBaseCompleta() {
+  const btn = document.getElementById('btn-full-download');
+  if (btn.dataset.busy) return;
+  const ok = confirm(
+    'Se descargará la base COMPLETA de contratos de Medellín directamente ' +
+    'desde datos.gov.co (más de 100.000 registros).\n\n' +
+    'Puede tardar entre 1 y 3 minutos según tu conexión. El resultado es un ' +
+    'CSV (~60 MB) para Excel, pandas o la herramienta que uses.\n\n¿Continuar?');
+  if (!ok) return;
+
+  btn.dataset.busy = '1';
+  const original = btn.textContent;
+  const contracts = [];
+  const BATCH = 5000;
+  try {
+    let offset = 0;
+    while (true) {
+      btn.textContent = `⏳ Descargando… ${offset.toLocaleString('es-CO')} registros`;
+      const params = new URLSearchParams({
+        '$where':  `${WHERE_CIUDAD} AND fecha_de_firma >= '${FECHA_INICIO}'`,
+        '$limit':  String(BATCH),
+        '$offset': String(offset),
+        // orden estable para que la paginación no duplique ni salte registros
+        '$order':  'fecha_de_firma DESC, id_contrato DESC',
+      });
+      const res = await fetch(`${SECOP_URL}?${params.toString()}`);
+      if (!res.ok) throw new Error(`la API respondió ${res.status}`);
+      const batch = await res.json();
+      contracts.push(...batch.map(normalize));
+      if (batch.length < BATCH) break;
+      offset += BATCH;
+      await new Promise(r => setTimeout(r, 150)); // cortesía con la API pública
+    }
+    btn.textContent = `⏳ Generando CSV (${contracts.length.toLocaleString('es-CO')} contratos)…`;
+    descargarBlob(buildCSV(contracts),
+      `contratos-medellin-completo-${new Date().toISOString().slice(0, 10)}.csv`);
+  } catch (err) {
+    alert(`No se pudo completar la descarga: ${err.message}.\n` +
+          'Reintenta en unos minutos — datos.gov.co puede estar saturado.');
+  } finally {
+    delete btn.dataset.busy;
+    btn.textContent = original;
+  }
 }
 
 // ─── RENDER TABLE ─────────────────────────────────────────────────────────────
@@ -667,6 +732,7 @@ function setupFilters() {
     applyFilters();
   });
   document.getElementById('btn-export').addEventListener('click', exportCSV);
+  document.getElementById('btn-full-download').addEventListener('click', descargarBaseCompleta);
 
   // Selector de ámbito (todo el tablero cambia de universo)
   document.querySelectorAll('input[name="ambito"]').forEach(radio => {

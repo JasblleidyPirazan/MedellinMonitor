@@ -82,6 +82,8 @@ def normalize(raw: dict) -> dict:
         # SECOP II usa "proveedor_adjudicado", no "nombre_del_contratista_proveedor"
         'proveedor':      raw.get('proveedor_adjudicado', '—'),
         'docProveedor':   raw.get('documento_proveedor', ''),
+        # NIT de la entidad contratante (análisis de entidades en doble rol)
+        'nitEntidad':     raw.get('nit_entidad', ''),
         'esPyme':         raw.get('es_pyme') in ('Sí', 'Si', '1', True),
         'duracion':       raw.get('duración_del_contrato') or raw.get('duraci_n_del_contrato', '—'),
         'url':            url,
