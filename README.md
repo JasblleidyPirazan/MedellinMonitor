@@ -105,6 +105,7 @@ Para activarlo: haz push del repo a GitHub y activa los workflows en la pestaña
 - **Top contratistas**: por número de contratos y por dinero contratado (clic en un nombre filtra la tabla).
 - **Distribuciones** por tipo de contrato y modalidad.
 - **Tabla** filtrable (entidad, tipo, modalidad, estado, búsqueda por contratista/NIT/objeto), ordenable por valor y fecha, con exportación a CSV y enlace a la ficha de cada proceso en SECOP.
+- **Descarga de la base completa**: el botón «⬇⬇ Base completa (CSV)» baja todo el dataset (~120.000 contratos) directamente desde datos.gov.co a un CSV con NITs de entidad y contratista, listo para análisis local en Excel, pandas o SQLite.
 
 ---
 
